@@ -84,66 +84,18 @@ function Heatmap(options){
 
     this.maxValue = 1;
 
-    /**
-     * Given a map, initializes this.canvasLayer, and this.context
-     *
-     * @param map
-     */ 
-    // this.initializeCanvas_ = function(map){
-    //   var canvasLayerOptions = {
-    //     map: map,
-    //     resizeHandler: this.update_,
-    //     animate: false,
-    //     updateHandler: this.update_,
-    //     resolutionScale: window.devicePixelRatio || 1
-    //   };
-    //   this.canvasLayer = new CanvasLayer(canvasLayerOptions);
-    //   this.context = this.canvasLayer.canvas.getContext('2d');
-    // }
-
-    /**
-     * Returns a 2d matrix where each element corresponds to a pixel on the map
-     *  and the value is where on the heatmap to sample from.
-     *
-     * @param width: width of the canvas in pixels
-     * @param height: height of the canvas in pixels
-     */
-    // this.generatePixelValues_ = undefined;
-
-    /**
-     * Mutates the imgData param to reflect the the pixel values matrix
-     *
-     * @param imgData
-     * @param pixelValues: {@see generatePixelValues}
-     * @param width: width of the canvas in pixels
-     * @param height: height of the canvas in pixels
-     */ 
-    // this.updatePixelData_ = undefined;
-
-    /**
-     * Function called  by CanvasLayer code to do drawing
-     */
-    // this.update_ = undefined;
-
-    /**
-     * Adds point to heatData and redraws
-     *
-     * @param point: list with form [lat, lng, value]
-     */
-    // this.addPoint = undefined;
-
-    /**
-     * Adds the list of points to heatData and redraws
-     *
-     * @param points: list of lists of form: [[lat, lng, value], ... ]
-     */
-    // this.addPoints = undefined;
-
     if (options){
       this.setOptions(options);
     }
 };
 
+/**
+ * Returns a 2d matrix where each element corresponds to a pixel on the map
+ *  and the value is where on the heatmap to sample from.
+ *
+ * @param width: width of the canvas in pixels
+ * @param height: height of the canvas in pixels
+ */
 Heatmap.prototype.generatePixelValues_ = function(width, height){
   bounds = this.map.getBounds();
   mapProjection = this.map.getProjection();
@@ -202,6 +154,14 @@ Heatmap.prototype.generatePixelValues_ = function(width, height){
   return pixelValues;
 }
 
+/**
+ * Mutates the imgData param to reflect the the pixel values matrix
+ *
+ * @param imgData
+ * @param pixelValues: {@see generatePixelValues}
+ * @param width: width of the canvas in pixels
+ * @param height: height of the canvas in pixels
+ */ 
 Heatmap.prototype.updatePixelData_ = function(imgData, pixelValues, width, height){
   for (var row = 0; row < height; row++){
       for (var col = 0; col < width; col++){
@@ -232,6 +192,11 @@ Heatmap.prototype.update_ = function(that){
   }
 }
 
+/**
+ * Given a map, initializes this.canvasLayer, and this.context
+ *
+ * @param map
+ */ 
 Heatmap.prototype.initializeCanvas_ = function(map){
   that = this;
   var updateHandler = function(){
@@ -284,14 +249,23 @@ Heatmap.prototype.setOptions = function(options){
   }
 }
 
+/**
+ * Adds the list of points to heatData and redraws
+ *
+ * @param points: list of lists of form: [[lat, lng, value], ... ]
+ */
 Heatmap.prototype.addPoints = function(points){
   for (var i = 0; i < points.length; i++){
     this.heatData.push(points[i]);
     this.maxValue = Math.max(points[i][2], this.maxValue);
   }
-  // this.update_();
 }
 
+/**
+ * Adds point to heatData and redraws
+ *
+ * @param point: list with form [lat, lng, value]
+ */
 Heatmap.prototype.addPoint = function(point){
   this.addPoints([point]);
 }
