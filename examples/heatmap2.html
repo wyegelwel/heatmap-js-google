@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Hello 2d World</title>
+    <style>
+      html, body, #map-div {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+      }
+    </style>
+
+    <script src="http://maps.googleapis.com/maps/api/js?sensor=false"></script>
+    <script src="../CanvasLayer.js"></script>
+    <script src="../heatmap.js"></script>
+    <script src="https://code.jquery.com/jquery-2.1.1.min.js"></script>
+    <script src="data/testPath4.js"> </script>
+
+    <script>
+      function placeMarker(lat,lng) { new google.maps.Marker({position: new google.maps.LatLng(lat,lng), map: map})}
+
+      var map;
+
+      function init() {
+        // initialize the map
+        var ny = new google.maps.LatLng(40.742861, -74.014206)
+        var mapOptions = {
+          zoom: 13,
+          center: ny,
+          mapTypeId: google.maps.MapTypeId.ROADMAP,
+          styles: [
+            {
+              featureType: 'water',
+              stylers: [{ color: '#c3cfdd'}]
+            },
+            {
+              featureType: 'poi',
+              stylers: [{visibility: 'off'}]
+            }
+          ]
+        };
+        mapDiv = document.getElementById('map-div');
+
+        map = new google.maps.Map(mapDiv, mapOptions);
+
+        heatmap = new Heatmap({map: map,
+                               radius: 10});
+        heatmap.addPoints(data)
+        
+      }
+      
+
+
+      document.addEventListener('DOMContentLoaded', init, false);
+    </script>
+  </head>
+
+  <body>
+    <div id="map-div"></div>
+  </body>
+</html>
