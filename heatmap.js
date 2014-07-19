@@ -1,4 +1,5 @@
 function createArray(length) {
+  // console.log(length)
     var arr = new Array(length || 0),
         i = length;
 
@@ -82,12 +83,24 @@ function Heatmap(options){
 
     this.heatData = [];
 
+    this.minBB = [180, 90];
+    this.maxBB = [-180, -90]
+
+    this.cacheReady = false;
+    this.cache = {};
+
     this.maxValue = 1;
 
     if (options){
       this.setOptions(options);
     }
 };
+
+
+
+Heatmap.prototype.latLngToGMLatLng = function(latLng){
+  return new google.maps.LatLng(latLng[0], latLng[1]);
+}
 
 /**
  * Returns a 2d matrix where each element corresponds to a pixel on the map
@@ -96,20 +109,22 @@ function Heatmap(options){
  * @param width: width of the canvas in pixels
  * @param height: height of the canvas in pixels
  */
-Heatmap.prototype.generatePixelValues_ = function(width, height){
-  bounds = this.map.getBounds();
+Heatmap.prototype.generatePixelValues_ = function(){
   mapProjection = this.map.getProjection();
-  
 
-  // Convert lat-lng in to world coords which are uniform across map
-  maxBB = mapProjection.fromLatLngToPoint(bounds.getNorthEast())
-  minBB = mapProjection.fromLatLngToPoint(bounds.getSouthWest())
-  
-  yRange = maxBB.y - minBB.y;
-  xRange = maxBB.x - minBB.x
+  vMaxBB = mapProjection.fromLatLngToPoint(this.latLngToGMLatLng(this.maxBB))
+  vMinBB = mapProjection.fromLatLngToPoint(this.latLngToGMLatLng(this.minBB))
 
-  yStep = yRange/height;
-  xStep = xRange/width;
+  console.log("value")
+  console.log(vMaxBB)
+  console.log(vMinBB)
+
+  extent = this.kernelExtent();
+
+  width = Math.ceil((vMaxBB.x - vMinBB.x)/this.cache.xStep) + extent[1]*2;
+  height = Math.ceil((vMaxBB.y - vMinBB.y)/this.cache.yStep) + extent[0]*2;
+
+  yStep = this.cache.yStep; xStep = this.cache.xStep;
 
   function latLngToPixelCoord(lat, lng){
       point = mapProjection.fromLatLngToPoint(new google.maps.LatLng(lat,lng));
@@ -117,17 +132,16 @@ Heatmap.prototype.generatePixelValues_ = function(width, height){
   }
 
   function pointToPixelCoord(x,y){
-      return {row: (height-1) - Math.floor((y-minBB.y)/yStep), 
-                col: Math.floor((x-minBB.x)/xStep)}
+    return {row: (height-1) - Math.floor((y-vMinBB.y)/yStep + extent[0]), 
+              col: Math.floor((x-vMinBB.x)/xStep) + extent[1]}
   }
 
   function pixelCoordToPoint(row, col){
-      return {y: (height-row-1)*yStep+minBB.y,
-               x: col*xStep+minBB.x};
+      return {y: (height-row-1-extent[0])*yStep+vMinBB.y,
+               x: (col-extent[1])*xStep+vMinBB.x};
   }
-
+  
   pixelValues = createArray(height, width);
-  extent = this.kernelExtent();
   for (var i = 0; i < this.heatData.length; i++){
     // Wrangle data in to correct transforms and form
     llValue = this.heatData[i];
@@ -151,7 +165,9 @@ Heatmap.prototype.generatePixelValues_ = function(width, height){
       }
     }                
   }
-  return pixelValues;
+
+  this.pixelValues = pixelValues;
+  this.pointToValuePixel_ = pointToPixelCoord;
 }
 
 /**
@@ -165,30 +181,96 @@ Heatmap.prototype.generatePixelValues_ = function(width, height){
 Heatmap.prototype.updatePixelData_ = function(imgData, pixelValues, width, height){
   for (var row = 0; row < height; row++){
       for (var col = 0; col < width; col++){
-          v = clamp(pixelValues[row][col], 0, 1);
-          imgData.data[(col+row*width)*4 + 0] = v*255;
-          imgData.data[(col+row*width)*4 + 1] = v*255;
-          imgData.data[(col+row*width)*4 + 2] = v*255;
-          imgData.data[(col+row*width)*4 + 3] = v>1e-1 ? 175 : 0;
+          valuePixel = this.mapPixelToValuePixel_(row, col);
+          if (valuePixel !== null){
+            v = clamp(this.pixelValues[valuePixel.row][valuePixel.col], 0, 1);
+            if (isNaN(v) || v === undefined){
+              console.log("fuck!")
+            }
+            imgData.data[(col+row*width)*4 + 0] = v*255;
+            imgData.data[(col+row*width)*4 + 1] = v*255;
+            imgData.data[(col+row*width)*4 + 2] = v*255;
+            imgData.data[(col+row*width)*4 + 3] = v>1e-1 ? 175 : 0;
+          }
+          
       } 
   }
 }
 
 Heatmap.prototype.update_ = function(that){
-  console.log("update")
-  if (that.map.getProjection() !== undefined){
+  
+  if (that.cacheReady){
+    console.log("update")
     var canvasWidth = that.canvasLayer.canvas.width;
     var canvasHeight = that.canvasLayer.canvas.height;
 
     that.context.clearRect(0, 0, canvasWidth, canvasHeight);
 
-    pixelValues = that.generatePixelValues_(canvasWidth, canvasHeight);
+    this.recomputeCanvasCache_();
+
+   // pixelValues = that.generatePixelValues_(canvasWidth, canvasHeight);
 
     imgData = that.context.getImageData(0,0,canvasWidth,canvasHeight);
 
-    that.updatePixelData_(imgData, pixelValues, canvasWidth, canvasHeight);
+    that.updatePixelData_(imgData, [], canvasWidth, canvasHeight);
 
     that.context.putImageData(imgData, 0,0);
+  }else{
+    that.recomputeCache_();
+  }
+}
+
+Heatmap.prototype.recomputeCanvasCache_ = function(){
+  var bounds = this.map.getBounds();
+  var mapProjection = this.map.getProjection();
+
+  // Convert lat-lng in to world coords which are uniform across map
+  var maxBB = mapProjection.fromLatLngToPoint(bounds.getNorthEast());
+  var minBB = mapProjection.fromLatLngToPoint(bounds.getSouthWest());
+
+  console.log(minBB);
+  console.log(maxBB);
+
+  var yRange = maxBB.y - minBB.y;
+  var xRange = maxBB.x - minBB.x
+
+  var yStep = yRange/this.canvasLayer.canvas.height;
+  var xStep = xRange/this.canvasLayer.canvas.width;
+
+  this.cache.canvasPointBounds = {minBB: minBB, maxBB: maxBB};
+  this.cache.xStep = xStep;
+  this.cache.yStep = yStep;
+}
+
+Heatmap.prototype.recomputeCache_ = function(){
+  if (that.map.getProjection() !== undefined){
+    this.recomputeCanvasCache_();
+
+    this.generatePixelValues_(); 
+
+    this.mapPixelToValuePixel_ = function(mRow, mCol){
+      var canvasHeight = this.canvasLayer.canvas.height;
+      var valueHeight = this.pixelValues.length;
+      var valueWidth = this.pixelValues[0].length;
+      
+      var x = mCol*this.cache.xStep + this.cache.canvasPointBounds.minBB.x;
+      var y = (canvasHeight - mRow - 1) * this.cache.yStep + this.cache.canvasPointBounds.minBB.y;
+      // console.log(x + ", " + y);
+      var valuePixel = this.pointToValuePixel_(x,y)
+      var within = valuePixel.row >= 0 && valuePixel.col >= 0 
+                && valuePixel.row < valueHeight && valuePixel.col < valueWidth; 
+      if (within){
+        valuePixel.x = x;
+        valuePixel.y = y;
+        valuePixel.width = valueWidth;
+        valuePixel.height = valueHeight;
+        return valuePixel;
+      } else{
+        return null;//{valuePixel: valuePixel, x: x, y: y, width: valueWidth, height: valueHeight, this:this};
+      }
+    }
+
+    this.cacheReady = true;
   }
 }
 
@@ -211,6 +293,11 @@ Heatmap.prototype.initializeCanvas_ = function(map){
   };
   this.canvasLayer = new CanvasLayer(canvasLayerOptions);
   this.context = this.canvasLayer.canvas.getContext('2d');
+  this.recomputeCache_();
+  google.maps.event.addListener(map, "zoom_changed", function(){
+    that.cacheReady = false;
+    that.recomputeCache_();
+  });
 }
 
 Heatmap.prototype.defaultKernel= function(radius){
@@ -247,6 +334,7 @@ Heatmap.prototype.setOptions = function(options){
       this.map = options.map
       this.initializeCanvas_(map);
   }
+  this.recomputeCache_();
 }
 
 /**
@@ -258,6 +346,10 @@ Heatmap.prototype.addPoints = function(points){
   for (var i = 0; i < points.length; i++){
     this.heatData.push(points[i]);
     this.maxValue = Math.max(points[i][2], this.maxValue);
+    this.minBB = [Math.min(points[i][0], this.minBB[0]), 
+                    Math.min(points[i][1], this.minBB[1])];
+    this.maxBB = [Math.max(points[i][0], this.maxBB[0]), 
+                    Math.max(points[i][1], this.maxBB[1])]
   }
 }
 
