@@ -382,7 +382,7 @@ CanvasLayer.prototype.onAdd = function() {
   this.setPane_();
 
   this.resizeListener_ = google.maps.event.addDomListener(this.getMap(),
-      'resize', this.resizeFunction_);
+      'bounds_changed', this.resizeFunction_);
   this.centerListener_ = google.maps.event.addListener(this.getMap(),
       'center_changed', this.repositionFunction_);
 
@@ -438,6 +438,17 @@ CanvasLayer.prototype.resize_ = function() {
   var oldWidth = this.canvas.width;
   var oldHeight = this.canvas.height;
 
+  // reset styling if new sizes don't match; resize of data not needed
+  if (this.canvasCssWidth_ !== mapWidth ||
+      this.canvasCssHeight_ !== mapHeight) {
+    this.canvasCssWidth_ = mapWidth;
+    this.canvasCssHeight_ = mapHeight;
+    this.canvas.style.width = mapWidth + 'px';
+    this.canvas.style.height = mapHeight + 'px';
+  }else{
+    return;
+  }
+
   // resizing may allocate a new back buffer, so do so conservatively
   if (oldWidth !== newWidth || oldHeight !== newHeight) {
     this.canvas.width = newWidth;
@@ -446,15 +457,6 @@ CanvasLayer.prototype.resize_ = function() {
     this.needsResize_ = true;
     this.scheduleUpdate();
     this.repositionFunction_();
-  }
-
-  // reset styling if new sizes don't match; resize of data not needed
-  if (this.canvasCssWidth_ !== mapWidth ||
-      this.canvasCssHeight_ !== mapHeight) {
-    this.canvasCssWidth_ = mapWidth;
-    this.canvasCssHeight_ = mapHeight;
-    this.canvas.style.width = mapWidth + 'px';
-    this.canvas.style.height = mapHeight + 'px';
   }
 };
 
