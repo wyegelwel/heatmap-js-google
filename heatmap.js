@@ -28,16 +28,6 @@ function clamp(x, min, max){
 function Heatmap(options){
 
     /**
-     * Returns the new pixel value. This function will be used in a streaming
-     *  fashion
-     *
-     * @param oldValue
-     * @param pixelCoord: list of two elements [row, col]
-     * @param heatPoint: list of [[row, col], value] 
-     */
-    this.calculatePixelValue = undefined;
-
-    /**
      * Returns a value between 0 and 1 which is used to scale the value of a 
      * point
      * 
@@ -50,6 +40,10 @@ function Heatmap(options){
      *  kernel".
      * This extent is the number of PIXELS away from heatmap point the kernal
      *  is non-zero. 
+     *
+     * The extent should be an integer. If your kernel has influence over 2.5
+     *  pixels, then make the extent 3. More generally, the extent should be 
+     *  the ceiling of the kernels influence.
      *
      * Visually, if x is your heatmap point and e is the pixels where the 
      *  kernel is non-zero, then the kernelExtent() should return [2,2] because
@@ -88,6 +82,8 @@ function Heatmap(options){
 
     this.cacheReady = false;
     this.cache = {};
+
+    this.gradient = new Gradient([[0,255,0], [0,0,255], [255,0,0]])
 
     this.maxValue = 1;
 
@@ -145,12 +141,10 @@ Heatmap.prototype.generatePixelValues_ = function(){
   for (var i = 0; i < this.heatData.length; i++){
     // Wrangle data in to correct transforms and form
     llValue = this.heatData[i];
-    lat = llValue[0];
-    lng = llValue[1];
-    value = llValue[2];
+    lat = llValue[0]; lng = llValue[1]; value = llValue[2];
     pixelCoord = latLngToPixelCoord(lat, lng)
     heatRowCol = [pixelCoord.row, pixelCoord.col];
-    
+    heatPoint = [heatRowCol, value];
     // Bounds for loop
     minRow = Math.max(0, pixelCoord.row-extent[0]);
     maxRow = Math.min(height-1, pixelCoord.row+extent[0]);
@@ -159,7 +153,6 @@ Heatmap.prototype.generatePixelValues_ = function(){
     for (var row = minRow; row <= maxRow; row++){
       for (var col = minCol; col <= maxCol; col++){
         oldValue = pixelValues[row][col];
-        heatPoint = [heatRowCol, value];
         pixelValues[row][col] = this.calculatePixelValue(oldValue, [row, col], 
                                                           heatPoint);
       }
@@ -181,15 +174,13 @@ Heatmap.prototype.generatePixelValues_ = function(){
 Heatmap.prototype.updatePixelData_ = function(imgData, pixelValues, width, height){
   for (var row = 0; row < height; row++){
       for (var col = 0; col < width; col++){
-          valuePixel = this.mapPixelToValuePixel_(row, col);
+          var valuePixel = this.mapPixelToValuePixel_(row, col);
           if (valuePixel !== null){
-            v = clamp(this.pixelValues[valuePixel.row][valuePixel.col], 0, 1);
-            if (isNaN(v) || v === undefined){
-              console.log("fuck!")
-            }
-            imgData.data[(col+row*width)*4 + 0] = v*255;
-            imgData.data[(col+row*width)*4 + 1] = v*255;
-            imgData.data[(col+row*width)*4 + 2] = v*255;
+            var v = clamp(this.pixelValues[valuePixel.row][valuePixel.col], 0, 1);
+            color = this.gradient.interpolateColor(v);
+            imgData.data[(col+row*width)*4 + 0] = color[0];
+            imgData.data[(col+row*width)*4 + 1] = color[1];
+            imgData.data[(col+row*width)*4 + 2] = color[2];
             imgData.data[(col+row*width)*4 + 3] = v>1e-1 ? 175 : 0;
           }
           
@@ -197,8 +188,7 @@ Heatmap.prototype.updatePixelData_ = function(imgData, pixelValues, width, heigh
   }
 }
 
-Heatmap.prototype.update_ = function(that){
-  
+Heatmap.prototype.updateCanvas_ = function(that){
   if (that.cacheReady){
     console.log("update")
     var canvasWidth = that.canvasLayer.canvas.width;
@@ -206,9 +196,7 @@ Heatmap.prototype.update_ = function(that){
 
     that.context.clearRect(0, 0, canvasWidth, canvasHeight);
 
-    this.recomputeCanvasCache_();
-
-   // pixelValues = that.generatePixelValues_(canvasWidth, canvasHeight);
+    this.updateCanvasCache_();
 
     imgData = that.context.getImageData(0,0,canvasWidth,canvasHeight);
 
@@ -216,11 +204,11 @@ Heatmap.prototype.update_ = function(that){
 
     that.context.putImageData(imgData, 0,0);
   }else{
-    that.recomputeCache_();
+    that.updateFullCache_();
   }
 }
 
-Heatmap.prototype.recomputeCanvasCache_ = function(){
+Heatmap.prototype.updateCanvasCache_ = function(){
   var bounds = this.map.getBounds();
   var mapProjection = this.map.getProjection();
 
@@ -242,9 +230,9 @@ Heatmap.prototype.recomputeCanvasCache_ = function(){
   this.cache.yStep = yStep;
 }
 
-Heatmap.prototype.recomputeCache_ = function(){
+Heatmap.prototype.updateFullCache_ = function(){
   if (that.map.getProjection() !== undefined){
-    this.recomputeCanvasCache_();
+    this.updateCanvasCache_();
 
     this.generatePixelValues_(); 
 
@@ -282,7 +270,7 @@ Heatmap.prototype.recomputeCache_ = function(){
 Heatmap.prototype.initializeCanvas_ = function(map){
   that = this;
   var updateHandler = function(){
-    that.update_(that);
+    that.updateCanvas_(that);
   };
   var canvasLayerOptions = {
     map: map,
@@ -293,10 +281,10 @@ Heatmap.prototype.initializeCanvas_ = function(map){
   };
   this.canvasLayer = new CanvasLayer(canvasLayerOptions);
   this.context = this.canvasLayer.canvas.getContext('2d');
-  this.recomputeCache_();
+  this.updateFullCache_();
   google.maps.event.addListener(map, "zoom_changed", function(){
     that.cacheReady = false;
-    that.recomputeCache_();
+    that.updateFullCache_();
   });
 }
 
@@ -322,7 +310,8 @@ Heatmap.prototype.setOptions = function(options){
   } else if (options.radius !== undefined){
       this.calculatePixelValue = this.defaultCalculatePixelValue;
       this.kernel = this.defaultKernel(options.radius);
-      this.kernelExtent = function (){return [options.radius, options.radius];}
+      var radius = Math.ceil(options.radius);
+      this.kernelExtent = function (){return [radius, radius];}
   }
   // This is intentionally put after the big if/elseif block to allow 
   //  for custom kernel extents
@@ -330,11 +319,16 @@ Heatmap.prototype.setOptions = function(options){
       this.kernelExtent = options.kernelExtent;
   }
 
+  if (options.gradient !== undefined){
+    this.gradient = new Gradient(options.gradient);
+  }
+
   if (options.map !== undefined){
       this.map = options.map
       this.initializeCanvas_(map);
   }
-  this.recomputeCache_();
+  this.updateFullCache_();
+  this.updateCanvas_(this);
 }
 
 /**
@@ -360,4 +354,50 @@ Heatmap.prototype.addPoints = function(points){
  */
 Heatmap.prototype.addPoint = function(point){
   this.addPoints([point]);
+}
+
+
+
+function Gradient(colors){
+  var gradientColors = [];
+  colors.map(function(color){
+    if (color.length == 3){
+      gradientColors.push([color[0], color[1], color[2], 1]);
+    }else if (color.length == 4){
+      gradientColors.push(color);
+    } else{
+      throw "Color should have either 3 channels (rgb) or 4 channels (rbga)";
+    }
+  });
+  this.colors = gradientColors;
+};
+
+/**
+ * Returns a rgba of the color requested by x along the gradient
+ *
+ * @param x is a float between 0 and 1 indexing into the gradient
+ */
+Gradient.prototype.interpolateColor = function(x){
+  if (x >= 0 && x <= 1){
+    var colorSpacing = 1.0/(this.colors.length-1);
+
+    var lowIndex = Math.floor(x / colorSpacing);
+    if (lowIndex == this.colors.length-1){
+      return this.colors[lowIndex];
+    }
+    var highIndex = lowIndex + 1;
+    
+    var lowColor = this.colors[lowIndex];
+    var highColor = this.colors[highIndex];
+
+    var interpolator = x / colorSpacing - lowIndex;
+    var color = [];
+    for (var i = 0; i < 3; i++){
+      color[i] = (1-interpolator) * lowColor[i] + interpolator * highColor[i];
+    }
+
+    return color;  
+  } else{
+    throw "x (" + x +") must be between 0 and 1";
+  }
 }
