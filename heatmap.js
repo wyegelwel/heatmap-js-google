@@ -92,8 +92,6 @@ function Heatmap(options){
     }
 };
 
-
-
 Heatmap.prototype.latLngToGMLatLng = function(latLng){
   return new google.maps.LatLng(latLng[0], latLng[1]);
 }
@@ -144,7 +142,7 @@ Heatmap.prototype.generatePixelValues_ = function(){
     lat = llValue[0]; lng = llValue[1]; value = llValue[2];
     pixelCoord = latLngToPixelCoord(lat, lng)
     heatRowCol = [pixelCoord.row, pixelCoord.col];
-    heatPoint = [heatRowCol, value];
+    heatPoint = [heatRowCol, value/this.maxValue];
     // Bounds for loop
     minRow = Math.max(0, pixelCoord.row-extent[0]);
     maxRow = Math.min(height-1, pixelCoord.row+extent[0]);
@@ -324,7 +322,7 @@ Heatmap.prototype.setOptions = function(options){
   }
 
   if (options.map !== undefined){
-      this.map = options.map
+      this.map = options.map;
       this.initializeCanvas_(map);
   }
   this.updateFullCache_();
