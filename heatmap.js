@@ -83,9 +83,10 @@ function Heatmap(options){
     this.cacheReady = false;
     this.cache = {};
 
-    this.gradient = new Gradient([[0,255,0], [0,0,255], [255,0,0]])
+    this.gradient = new Gradient([[255,0,0], [0,0,255], [0,255,0]])
 
     this.maxValue = 1;
+    this.unweightedCount = 0;
 
     this.scale = 1;
     this.initialZoom = -1;
@@ -144,10 +145,12 @@ Heatmap.prototype.generatePixelValues_ = function(){
   for (var i = 0; i < this.heatData.length; i++){
     // Wrangle data in to correct transforms and form
     llValue = this.heatData[i];
-    lat = llValue[0]; lng = llValue[1]; value = llValue[2];
+    lat = llValue[0]; lng = llValue[1];
+    value = llValue.length == 3 ? llValue[2]/this.maxValue : 1.0;
+
     pixelCoord = latLngToPixelCoord(lat, lng)
     heatRowCol = [pixelCoord.row, pixelCoord.col];
-    heatPoint = [heatRowCol, value/this.maxValue];
+    heatPoint = [heatRowCol, value];
     // Bounds for loop
     
     minRow = Math.max(0, pixelCoord.row-rowExtent);
@@ -236,7 +239,7 @@ Heatmap.prototype.updateCanvasCache_ = function(){
 }
 
 Heatmap.prototype.updateFullCache_ = function(){
-  if (that.map.getProjection() !== undefined){
+  if (that.map.getProjection() !== undefined && this.heatData.length > 0){
     this.updateCanvasCache_();
 
     this.scale = Math.max(1, Math.pow(2, map.zoom - this.initialZoom))
@@ -305,8 +308,7 @@ Heatmap.prototype.defaultKernel= function(radius){
 
 Heatmap.prototype.defaultCalculatePixelValue = function(oldValue, pixelCoord, heatPoint, scaledDist){
     var kernelValue = this.kernel(distance(pixelCoord, heatPoint[0]))
-    var scaledValue = (1-heatPoint[1]);
-    return oldValue + kernelValue*scaledValue;
+    return oldValue + kernelValue*heatPoint[1];
 }
 
 Heatmap.prototype.setOptions = function(options){
@@ -348,13 +350,21 @@ Heatmap.prototype.setOptions = function(options){
  */
 Heatmap.prototype.addPoints = function(points){
   for (var i = 0; i < points.length; i++){
-    this.heatData.push(points[i]);
-    this.maxValue = Math.max(points[i][2], this.maxValue);
-    this.minBB = [Math.min(points[i][0], this.minBB[0]), 
-                    Math.min(points[i][1], this.minBB[1])];
-    this.maxBB = [Math.max(points[i][0], this.maxBB[0]), 
-                    Math.max(points[i][1], this.maxBB[1])]
+    var point = points[i];
+    this.heatData.push(point);
+    if (point.length == 3){ // weighted
+      this.maxValue = Math.max(point[2], this.maxValue);
+    } else{
+      this.unweightedCount += 1;
+    }
+    
+    this.minBB = [Math.min(point[0], this.minBB[0]), 
+                    Math.min(point[1], this.minBB[1])];
+    this.maxBB = [Math.max(point[0], this.maxBB[0]), 
+                    Math.max(point[1], this.maxBB[1])]
   }
+  this.updateFullCache_();
+  this.updateCanvas_(this);
 }
 
 /**
