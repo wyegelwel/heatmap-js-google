@@ -91,6 +91,8 @@ function Heatmap(options){
     this.scale = 1;
     this.initialZoom = -1;
 
+    this.opacity = 220;
+
     if (options){
       this.setOptions(options);
     }
@@ -189,7 +191,7 @@ Heatmap.prototype.updatePixelData_ = function(imgData, pixelValues, width, heigh
             imgData.data[(col+row*width)*4 + 0] = color[0];
             imgData.data[(col+row*width)*4 + 1] = color[1];
             imgData.data[(col+row*width)*4 + 2] = color[2];
-            imgData.data[(col+row*width)*4 + 3] = v>1e-1 ? 175 : 0;
+            imgData.data[(col+row*width)*4 + 3] = v>1e-1 ? this.opacity : 0;
           }
           
       } 
@@ -283,6 +285,7 @@ Heatmap.prototype.initializeCanvas_ = function(map){
   var updateHandler = function(){
     that.updateCanvas_(that);
   };
+
   var canvasLayerOptions = {
     map: map,
     resizeHandler: updateHandler,
@@ -313,31 +316,35 @@ Heatmap.prototype.defaultCalculatePixelValue = function(oldValue, pixelCoord, he
 
 Heatmap.prototype.setOptions = function(options){
   if (options.calculatePixelValue !== undefined){
-      this.calculatePixelValue = options.calculatePixelValue;
+    this.calculatePixelValue = options.calculatePixelValue;
   } else if (options.kernel !== undefined){
-      this.calculatePixelValue = this.defaultCalculatePixelValue;
-      this.kernel = options.kernel;
+    this.calculatePixelValue = this.defaultCalculatePixelValue;
+    this.kernel = options.kernel;
   } else if (options.radius !== undefined){
-      this.calculatePixelValue = this.defaultCalculatePixelValue;
-      this.kernel = this.defaultKernel(options.radius);
-      var radius = Math.ceil(options.radius);
-      this.kernelExtent = function (){return [radius, radius];}
+    this.calculatePixelValue = this.defaultCalculatePixelValue;
+    this.kernel = this.defaultKernel(options.radius);
+    var radius = Math.ceil(options.radius);
+    this.kernelExtent = function (){return [radius, radius];}
   }
   // This is intentionally put after the big if/elseif block to allow 
   //  for custom kernel extents
   if (options.kernelExtent !== undefined){
-      this.kernelExtent = options.kernelExtent;
+    this.kernelExtent = options.kernelExtent;
   }
 
   if (options.gradient !== undefined){
     this.gradient = new Gradient(options.gradient);
   }
 
+  if (options.opacity !== undefined){
+    this.opacity = options.opacity;
+  }
+
   if (options.map !== undefined){
-      this.map = options.map;
-      this.initialZoom = map.zoom;
-      this.scale = 1;
-      this.initializeCanvas_(map);
+    this.map = options.map;
+    this.initialZoom = map.zoom;
+    this.scale = 1;
+    this.initializeCanvas_(map);
   }
   this.updateFullCache_();
   this.updateCanvas_(this);
