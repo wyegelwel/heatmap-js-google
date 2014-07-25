@@ -102,31 +102,20 @@ Heatmap.prototype.latLngToGMLatLng = function(latLng){
   return new google.maps.LatLng(latLng[0], latLng[1]);
 }
 
-/**
- * Returns a 2d matrix where each element corresponds to a pixel on the map
- *  and the value is where on the heatmap to sample from.
- *
- * @param width: width of the canvas in pixels
- * @param height: height of the canvas in pixels
- */
-Heatmap.prototype.generatePixelValues_ = function(){
-  mapProjection = this.map.getProjection();
+Heatmap.prototype.createPixelValueObject_ = function(){
+  var mapProjection = this.map.getProjection();
 
-  vMaxBB = mapProjection.fromLatLngToPoint(this.latLngToGMLatLng(this.maxBB))
-  vMinBB = mapProjection.fromLatLngToPoint(this.latLngToGMLatLng(this.minBB))
+  var vMaxBB = mapProjection.fromLatLngToPoint(this.latLngToGMLatLng(this.maxBB))
+  var vMinBB = mapProjection.fromLatLngToPoint(this.latLngToGMLatLng(this.minBB))
 
-  console.log("value")
-  console.log(vMaxBB)
-  console.log(vMinBB)
+  var extent = this.kernelExtent();
+  var rowExtent = Math.max(1, Math.ceil(extent[0]*this.scale));
+  var colExtent = Math.max(1, Math.ceil(extent[1]*this.scale));
 
-  extent = this.kernelExtent();
-  rowExtent = Math.max(1, Math.ceil(extent[0]*this.scale));
-  colExtent = Math.max(1, Math.ceil(extent[1]*this.scale));
+  var width = Math.ceil((vMaxBB.x - vMinBB.x)/this.cache.xStep) + colExtent*2;
+  var height = Math.ceil((vMaxBB.y - vMinBB.y)/this.cache.yStep) + rowExtent*2;
 
-  width = Math.ceil((vMaxBB.x - vMinBB.x)/this.cache.xStep) + colExtent*2;
-  height = Math.ceil((vMaxBB.y - vMinBB.y)/this.cache.yStep) + rowExtent*2;
-
-  yStep = this.cache.yStep; xStep = this.cache.xStep;
+  var yStep = this.cache.yStep; xStep = this.cache.xStep;
 
   function latLngToPixelCoord(lat, lng){
       point = mapProjection.fromLatLngToPoint(new google.maps.LatLng(lat,lng));
@@ -143,34 +132,56 @@ Heatmap.prototype.generatePixelValues_ = function(){
                x: (col-colExtent)*xStep+vMinBB.x};
   }
   
-  pixelValues = createArray(height, width);
+  var pixelValues = createArray(height, width);
+  this.pixelValues = {};
+  this.pixelValues.data = pixelValues;
+  this.pixelValues.width = width;
+  this.pixelValues.height = height;
+  this.pixelValues.latLngToPixelCoord = latLngToPixelCoord;
+  this.pixelValues.pointToPixelCoord = pointToPixelCoord;
+  this.pixelValues.pixelCoordToPoint = pixelCoordToPoint; 
+}
+
+/**
+ * Returns a 2d matrix where each element corresponds to a pixel on the map
+ *  and the value is where on the heatmap to sample from.
+ *
+ * @param width: width of the canvas in pixels
+ * @param height: height of the canvas in pixels
+ */
+Heatmap.prototype.generatePixelValues_ = function(){
+  
+  this.createPixelValueObject_();
+  var pixelValues = this.pixelValues.data;
+
+  var extent = this.kernelExtent();
+  var rowExtent = Math.max(1, Math.ceil(extent[0]*this.scale));
+  var colExtent = Math.max(1, Math.ceil(extent[1]*this.scale));
+
   for (var i = 0; i < this.heatData.length; i++){
     // Wrangle data in to correct transforms and form
-    llValue = this.heatData[i];
-    lat = llValue[0]; lng = llValue[1];
-    value = llValue.length == 3 ? llValue[2]/this.maxValue : 1.0;
+    var llValue = this.heatData[i];
+    var lat = llValue[0]; var lng = llValue[1];
+    var value = llValue.length == 3 ? llValue[2]/this.maxValue : 1.0;
 
-    pixelCoord = latLngToPixelCoord(lat, lng)
-    heatRowCol = [pixelCoord.row, pixelCoord.col];
-    heatPoint = [heatRowCol, value];
+    var pixelCoord = this.pixelValues.latLngToPixelCoord(lat, lng)
+    var heatRowCol = [pixelCoord.row, pixelCoord.col];
+    var heatPoint = [heatRowCol, value];
     // Bounds for loop
     
-    minRow = Math.max(0, pixelCoord.row-rowExtent);
-    maxRow = Math.min(height-1, pixelCoord.row+rowExtent);
-    minCol = Math.max(0, pixelCoord.col-colExtent);
-    maxCol = Math.min(width-1,pixelCoord.col+colExtent);
+    var minRow = Math.max(0, pixelCoord.row-rowExtent);
+    var maxRow = Math.min(this.pixelValues.height-1, pixelCoord.row+rowExtent);
+    var minCol = Math.max(0, pixelCoord.col-colExtent);
+    var maxCol = Math.min(this.pixelValues.width-1,pixelCoord.col+colExtent);
     for (var row = minRow; row <= maxRow; row++){
       for (var col = minCol; col <= maxCol; col++){
-        oldValue = pixelValues[row][col];
-        scaledDist = distance([row,col], heatRowCol)/this.scale
+        var oldValue = pixelValues[row][col];
+        var scaledDist = distance([row,col], heatRowCol)/this.scale
         pixelValues[row][col] = this.calculatePixelValue(oldValue, [row, col], 
                                                           heatPoint, scaledDist);
       }
     }                
   }
-
-  this.pixelValues = pixelValues;
-  this.pointToValuePixel_ = pointToPixelCoord;
 }
 
 /**
@@ -182,12 +193,13 @@ Heatmap.prototype.generatePixelValues_ = function(){
  * @param height: height of the canvas in pixels
  */ 
 Heatmap.prototype.updatePixelData_ = function(imgData, pixelValues, width, height){
+  var pixelValues = this.pixelValues.data;
   for (var row = 0; row < height; row++){
       for (var col = 0; col < width; col++){
           var valuePixel = this.mapPixelToValuePixel_(row, col);
           if (valuePixel !== null){
-            var v = clamp(this.pixelValues[valuePixel.row][valuePixel.col], 0, 1);
-            color = this.gradient.interpolateColor(v);
+            var v = clamp(pixelValues[valuePixel.row][valuePixel.col], 0, 1);
+            var color = this.gradient.interpolateColor(v);
             imgData.data[(col+row*width)*4 + 0] = color[0];
             imgData.data[(col+row*width)*4 + 1] = color[1];
             imgData.data[(col+row*width)*4 + 2] = color[2];
@@ -251,13 +263,13 @@ Heatmap.prototype.updateFullCache_ = function(){
 
     this.mapPixelToValuePixel_ = function(mRow, mCol){
       var canvasHeight = this.canvasLayer.canvas.height;
-      var valueHeight = this.pixelValues.length;
-      var valueWidth = this.pixelValues[0].length;
+      var valueHeight = this.pixelValues.height;
+      var valueWidth = this.pixelValues.width;
       
       var x = mCol*this.cache.xStep + this.cache.canvasPointBounds.minBB.x;
       var y = (canvasHeight - mRow - 1) * this.cache.yStep + this.cache.canvasPointBounds.minBB.y;
       // console.log(x + ", " + y);
-      var valuePixel = this.pointToValuePixel_(x,y)
+      var valuePixel = this.pixelValues.pointToPixelCoord(x,y)
       var within = valuePixel.row >= 0 && valuePixel.col >= 0 
                 && valuePixel.row < valueHeight && valuePixel.col < valueWidth; 
       if (within){
