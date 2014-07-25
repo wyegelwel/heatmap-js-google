@@ -29,6 +29,35 @@ function withinBB(p, min, max){
   return p[0] >= min[0] && p[1] >= min[1] && p[0] <= max[0] && p[1] <= max[1];
 }
 
+function degreesToRadians(deg) {
+  return deg * (Math.PI / 180);
+}
+
+/** @constructor */
+function MercatorProjection() {
+  var TILE_SIZE = 256;
+  this.pixelOrigin_ = {x: TILE_SIZE / 2, y: TILE_SIZE / 2};
+  this.pixelsPerLonDegree_ = TILE_SIZE / 360;
+  this.pixelsPerLonRadian_ = TILE_SIZE / (2 * Math.PI);
+}
+
+MercatorProjection.prototype.fromLatLngToPoint = function(latLng) {
+  var me = this;
+  var point = {x: 0, y: 0};
+  var origin = me.pixelOrigin_;
+
+  point.x = origin.x + latLng.lng() * me.pixelsPerLonDegree_;
+
+  // Truncating to 0.9999 effectively limits latitude to 89.189. This is
+  // about a third of a tile past the edge of the world tile.
+  var siny = clamp(Math.sin(degreesToRadians(latLng.lat())), -0.9999,
+      0.9999);
+  point.y = origin.y + 0.5 * Math.log((1 + siny) / (1 - siny)) *
+      -me.pixelsPerLonRadian_;
+  return point;
+};
+
+
 function Heatmap(options){
 
     /**
@@ -97,6 +126,8 @@ function Heatmap(options){
 
     this.opacity = 220;
 
+    this.projection = new MercatorProjection();
+
     if (options){
       this.setOptions(options);
     }
@@ -107,8 +138,7 @@ Heatmap.prototype.latLngToGMLatLng = function(latLng){
 }
 
 Heatmap.prototype.createPixelValueObject_ = function(){
-  var mapProjection = this.map.getProjection();
-
+  var projection = this.projection;
   var cHeight = this.canvasLayer.canvas.height;
   var cWidth = this.canvasLayer.canvas.width; 
   
@@ -129,7 +159,7 @@ Heatmap.prototype.createPixelValueObject_ = function(){
   var yStep = this.cache.yStep; xStep = this.cache.xStep;
 
   function latLngToPixelCoord(lat, lng){
-      point = mapProjection.fromLatLngToPoint(new google.maps.LatLng(lat,lng));
+      point = projection.fromLatLngToPoint(new google.maps.LatLng(lat,lng));
       return pointToPixelCoord(point.x, point.y);
   }
 
@@ -260,11 +290,10 @@ Heatmap.prototype.updateCanvas_ = function(that){
 
 Heatmap.prototype.updateCanvasCache_ = function(){
   var bounds = this.map.getBounds();
-  var mapProjection = this.map.getProjection();
 
   // Convert lat-lng in to world coords which are uniform across map
-  var maxBB = mapProjection.fromLatLngToPoint(bounds.getNorthEast());
-  var minBB = mapProjection.fromLatLngToPoint(bounds.getSouthWest());
+  var maxBB = this.projection.fromLatLngToPoint(bounds.getNorthEast());
+  var minBB = this.projection.fromLatLngToPoint(bounds.getSouthWest());
 
   console.log(minBB);
   console.log(maxBB);
@@ -294,7 +323,7 @@ Heatmap.prototype.updateCanvasCache_ = function(){
 }
 
 Heatmap.prototype.updateFullCache_ = function(){
-  if (that.map.getProjection() !== undefined && this.heatData.length > 0){
+  if (this.map.getBounds() !== undefined &&  this.heatData.length > 0){
     this.updateCanvasCache_();
 
     this.scale = Math.max(1, Math.pow(2, map.zoom - this.initialZoom))
