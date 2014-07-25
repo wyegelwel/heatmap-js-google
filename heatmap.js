@@ -41,16 +41,16 @@ function MercatorProjection() {
   this.pixelsPerLonRadian_ = TILE_SIZE / (2 * Math.PI);
 }
 
-MercatorProjection.prototype.fromLatLngToPoint = function(latLng) {
+MercatorProjection.prototype.fromLatLngToPoint = function(lat, lng) {
   var me = this;
   var point = {x: 0, y: 0};
   var origin = me.pixelOrigin_;
 
-  point.x = origin.x + latLng.lng() * me.pixelsPerLonDegree_;
+  point.x = origin.x + lng * me.pixelsPerLonDegree_;
 
   // Truncating to 0.9999 effectively limits latitude to 89.189. This is
   // about a third of a tile past the edge of the world tile.
-  var siny = clamp(Math.sin(degreesToRadians(latLng.lat())), -0.9999,
+  var siny = clamp(Math.sin(degreesToRadians(lat)), -0.9999,
       0.9999);
   point.y = origin.y + 0.5 * Math.log((1 + siny) / (1 - siny)) *
       -me.pixelsPerLonRadian_;
@@ -133,10 +133,6 @@ function Heatmap(options){
     }
 };
 
-Heatmap.prototype.latLngToGMLatLng = function(latLng){
-  return new google.maps.LatLng(latLng[0], latLng[1]);
-}
-
 Heatmap.prototype.createPixelValueObject_ = function(){
   var projection = this.projection;
   var cHeight = this.canvasLayer.canvas.height;
@@ -159,7 +155,7 @@ Heatmap.prototype.createPixelValueObject_ = function(){
   var yStep = this.cache.yStep; xStep = this.cache.xStep;
 
   function latLngToPixelCoord(lat, lng){
-      point = projection.fromLatLngToPoint(new google.maps.LatLng(lat,lng));
+      point = projection.fromLatLngToPoint(lat, lng);
       return pointToPixelCoord(point.x, point.y);
   }
 
@@ -292,8 +288,10 @@ Heatmap.prototype.updateCanvasCache_ = function(){
   var bounds = this.map.getBounds();
 
   // Convert lat-lng in to world coords which are uniform across map
-  var maxBB = this.projection.fromLatLngToPoint(bounds.getNorthEast());
-  var minBB = this.projection.fromLatLngToPoint(bounds.getSouthWest());
+  var northEast = bounds.getNorthEast();
+  var southWest = bounds.getSouthWest();
+  var maxBB = this.projection.fromLatLngToPoint(northEast.lat(), northEast.lng());
+  var minBB = this.projection.fromLatLngToPoint(southWest.lat(), southWest.lng());
 
   console.log(minBB);
   console.log(maxBB);
