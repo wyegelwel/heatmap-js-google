@@ -391,8 +391,19 @@ Heatmap.prototype.defaultKernel= function(radius){
 }
 
 Heatmap.prototype.defaultCalculatePixelValue = function(oldValue, pixelCoord, heatPoint, scaledDist){
-    var kernelValue = this.kernel(distance(pixelCoord, heatPoint[0]))
-    return oldValue + kernelValue*heatPoint[1];
+  var kernelValue = this.kernel(distance(pixelCoord, heatPoint[0]))
+  return oldValue + kernelValue*heatPoint[1];
+}
+
+Heatmap.prototype.contourCalculatePixelValue = function(radius){
+  var contourFunc = function(oldValue, pixelCoord, heatPoint, scaledDist){
+    if (scaledDist < radius){
+      return Math.max(oldValue, heatPoint[1]);
+    } else{
+      return oldValue;
+    }
+  }
+  return contourFunc;
 }
 
 Heatmap.prototype.setOptions = function(options){
@@ -404,9 +415,12 @@ Heatmap.prototype.setOptions = function(options){
   } else if (options.radius !== undefined){
     this.calculatePixelValue = this.defaultCalculatePixelValue;
     this.kernel = this.defaultKernel(options.radius);
-    var radius = Math.ceil(options.radius);
-    this.kernelExtent = function (){return [radius, radius];}
-  }
+    var ceilRadius = Math.ceil(options.radius);
+    this.kernelExtent = function (){return [ceilRadius, ceilRadius];}
+    if (options.MapType = "contour"){
+      this.calculatePixelValue = this.contourCalculatePixelValue(options.radius);
+    }
+  } 
   // This is intentionally put after the big if/elseif block to allow 
   //  for custom kernel extents
   if (options.kernelExtent !== undefined){
