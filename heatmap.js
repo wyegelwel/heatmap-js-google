@@ -25,6 +25,10 @@ function clamp(x, min, max){
   return Math.max(Math.min(x, max), min);
 }
 
+function withinBB(p, min, max){
+  return p[0] >= min[0] && p[1] >= min[1] && p[0] <= max[0] && p[1] <= max[1];
+}
+
 function Heatmap(options){
 
     /**
@@ -105,15 +109,22 @@ Heatmap.prototype.latLngToGMLatLng = function(latLng){
 Heatmap.prototype.createPixelValueObject_ = function(){
   var mapProjection = this.map.getProjection();
 
-  var vMaxBB = mapProjection.fromLatLngToPoint(this.latLngToGMLatLng(this.maxBB))
-  var vMinBB = mapProjection.fromLatLngToPoint(this.latLngToGMLatLng(this.minBB))
+  var cHeight = this.canvasLayer.canvas.height;
+  var cWidth = this.canvasLayer.canvas.width; 
+  
+  var vMinBB = this.cache.CanvasRowColToPoint(cHeight*2, cWidth*-1);
+  var vMaxBB = this.cache.CanvasRowColToPoint(cHeight*-1, cWidth*2);
 
-  var extent = this.kernelExtent();
-  var rowExtent = Math.max(1, Math.ceil(extent[0]*this.scale));
-  var colExtent = Math.max(1, Math.ceil(extent[1]*this.scale));
+  console.log("pixel values")
+  console.log(vMinBB);
+  console.log(vMaxBB);
 
-  var width = Math.ceil((vMaxBB.x - vMinBB.x)/this.cache.xStep) + colExtent*2;
-  var height = Math.ceil((vMaxBB.y - vMinBB.y)/this.cache.yStep) + rowExtent*2;
+  // var extent = this.kernelExtent();
+  // var rowExtent = Math.max(1, Math.ceil(extent[0]*this.scale));
+  // var colExtent = Math.max(1, Math.ceil(extent[1]*this.scale));
+
+  var width = cWidth*3;
+  var height = cHeight*3;
 
   var yStep = this.cache.yStep; xStep = this.cache.xStep;
 
@@ -123,13 +134,13 @@ Heatmap.prototype.createPixelValueObject_ = function(){
   }
 
   function pointToPixelCoord(x,y){
-    return {row: (height-1) - Math.floor((y-vMinBB.y)/yStep + rowExtent), 
-              col: Math.floor((x-vMinBB.x)/xStep) + colExtent}
+    return {row: (height-1) - Math.floor((y-vMinBB.y)/yStep), 
+              col: Math.floor((x-vMinBB.x)/xStep)}
   }
 
   function pixelCoordToPoint(row, col){
-      return {y: (height-row-1-rowExtent)*yStep+vMinBB.y,
-               x: (col-colExtent)*xStep+vMinBB.x};
+      return {y: (height-row-1)*yStep+vMinBB.y,
+               x: col*xStep+vMinBB.x};
   }
   
   var pixelValues = createArray(height, width);
@@ -150,7 +161,6 @@ Heatmap.prototype.createPixelValueObject_ = function(){
  * @param height: height of the canvas in pixels
  */
 Heatmap.prototype.generatePixelValues_ = function(){
-  
   this.createPixelValueObject_();
   var pixelValues = this.pixelValues.data;
 
@@ -168,6 +178,11 @@ Heatmap.prototype.generatePixelValues_ = function(){
     var heatRowCol = [pixelCoord.row, pixelCoord.col];
     var heatPoint = [heatRowCol, value];
     // Bounds for loop
+
+    if (!withinBB([pixelCoord.row, pixelCoord.col], [0, 0],
+                  [this.pixelValues.height-1, this.pixelValues.width-1])){
+      continue;
+    } 
     
     var minRow = Math.max(0, pixelCoord.row-rowExtent);
     var maxRow = Math.min(this.pixelValues.height-1, pixelCoord.row+rowExtent);
@@ -194,20 +209,29 @@ Heatmap.prototype.generatePixelValues_ = function(){
  */ 
 Heatmap.prototype.updatePixelData_ = function(imgData, pixelValues, width, height){
   var pixelValues = this.pixelValues.data;
+  var offSet = this.mapPixelToValuePixel_(0, 0);
   for (var row = 0; row < height; row++){
       for (var col = 0; col < width; col++){
-          var valuePixel = this.mapPixelToValuePixel_(row, col);
-          if (valuePixel !== null){
-            var v = clamp(pixelValues[valuePixel.row][valuePixel.col], 0, 1);
-            var color = this.gradient.interpolateColor(v);
-            imgData.data[(col+row*width)*4 + 0] = color[0];
-            imgData.data[(col+row*width)*4 + 1] = color[1];
-            imgData.data[(col+row*width)*4 + 2] = color[2];
-            imgData.data[(col+row*width)*4 + 3] = v>1e-1 ? this.opacity : 0;
-          }
-          
+        var v = clamp(pixelValues[offSet.row + row][offSet.col + col], 0, 1);
+        var color = this.gradient.interpolateColor(v);
+        imgData.data[(col+row*width)*4 + 0] = color[0];
+        imgData.data[(col+row*width)*4 + 1] = color[1];
+        imgData.data[(col+row*width)*4 + 2] = color[2];
+        imgData.data[(col+row*width)*4 + 3] = v>1e-1 ? this.opacity : 0;  
       } 
   }
+}
+
+Heatmap.prototype.pixelValuesNeedsUpdate_ = function(){
+  var canvasWidth = this.canvasLayer.canvas.width;
+  var canvasHeight = this.canvasLayer.canvas.height;
+  var topLeft = this.mapPixelToValuePixel_(0, 0);
+  var bottomRight = this.mapPixelToValuePixel_(canvasHeight ,canvasWidth);
+
+  var minBB = [0, 0];
+  var maxBB = [this.pixelValues.height-1, this.pixelValues.width-1];
+
+  return topLeft === null || bottomRight === null; 
 }
 
 Heatmap.prototype.updateCanvas_ = function(that){
@@ -216,10 +240,14 @@ Heatmap.prototype.updateCanvas_ = function(that){
     var canvasWidth = that.canvasLayer.canvas.width;
     var canvasHeight = that.canvasLayer.canvas.height;
 
-    that.context.clearRect(0, 0, canvasWidth, canvasHeight);
-
     this.updateCanvasCache_();
 
+    if (that.pixelValuesNeedsUpdate_()){
+      that.updateFullCache_();
+    }
+
+    that.context.clearRect(0, 0, canvasWidth, canvasHeight);
+    
     imgData = that.context.getImageData(0,0,canvasWidth,canvasHeight);
 
     that.updatePixelData_(imgData, [], canvasWidth, canvasHeight);
@@ -244,10 +272,23 @@ Heatmap.prototype.updateCanvasCache_ = function(){
   var yRange = maxBB.y - minBB.y;
   var xRange = maxBB.x - minBB.x
 
-  var yStep = yRange/this.canvasLayer.canvas.height;
-  var xStep = xRange/this.canvasLayer.canvas.width;
+  var height = this.canvasLayer.canvas.height;
+  var width = this.canvasLayer.canvas.width;
+
+  var yStep = yRange/height;
+  var xStep = xRange/width;
 
   this.cache.canvasPointBounds = {minBB: minBB, maxBB: maxBB};
+  this.cache.pointToCanvasRowCol = function (x,y){
+    var row = (height - 1) - Math.floor((y-minBB.y) / yStep);
+    var col = Math.floor((x - minBB.x) / xStep); 
+    return {row: row, col: col};
+  }
+  this.cache.CanvasRowColToPoint = function(row, col){
+    var x = col*xStep + minBB.x;
+    var y = (height - row - 1) * yStep + minBB.y;
+    return {x: x, y: y};
+  }
   this.cache.xStep = xStep;
   this.cache.yStep = yStep;
 }
@@ -266,13 +307,14 @@ Heatmap.prototype.updateFullCache_ = function(){
       var valueHeight = this.pixelValues.height;
       var valueWidth = this.pixelValues.width;
       
-      var x = mCol*this.cache.xStep + this.cache.canvasPointBounds.minBB.x;
-      var y = (canvasHeight - mRow - 1) * this.cache.yStep + this.cache.canvasPointBounds.minBB.y;
-      // console.log(x + ", " + y);
+      var cPoint = this.cache.CanvasRowColToPoint(mRow, mCol);
+      var x = cPoint.x; var y = cPoint.y;
+
       var valuePixel = this.pixelValues.pointToPixelCoord(x,y)
       var within = valuePixel.row >= 0 && valuePixel.col >= 0 
                 && valuePixel.row < valueHeight && valuePixel.col < valueWidth; 
-      if (within){
+      if (withinBB([valuePixel.row, valuePixel.col],[0,0], 
+                    [valueHeight-1, valueWidth])){
         valuePixel.x = x;
         valuePixel.y = y;
         valuePixel.width = valueWidth;
