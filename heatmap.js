@@ -192,7 +192,7 @@ Heatmap.prototype.setOptions = function(options){
     this.initializeCanvas_(map);
   }
   this.updateFullCache_();
-  this.updateCanvas_(this);
+  this.updateCanvas_();
 }
 
 /**
@@ -211,7 +211,7 @@ Heatmap.prototype.addPoints = function(points){
     }
   }
   this.updateFullCache_();
-  this.updateCanvas_(this);
+  this.updateCanvas_();
 }
 
 /**
@@ -312,27 +312,27 @@ Heatmap.prototype.pixelValuesNeedsUpdate_ = function(){
  * Umbrella function that handles redrawing the canvas as well as updating 
  *  caches as necessary
  */ 
-Heatmap.prototype.updateCanvas_ = function(that){
-  if (that.cacheReady){
+Heatmap.prototype.updateCanvas_ = function(){
+  if (this.cacheReady){
     console.log("update")
-    var canvasWidth = that.canvasLayer.canvas.width;
-    var canvasHeight = that.canvasLayer.canvas.height;
+    var canvasWidth = this.canvasLayer.canvas.width;
+    var canvasHeight = this.canvasLayer.canvas.height;
 
     this.updateCanvasCache_();
 
-    if (that.pixelValuesNeedsUpdate_()){
-      that.updateFullCache_();
+    if (this.pixelValuesNeedsUpdate_()){
+      this.updateFullCache_();
     }
 
-    that.context.clearRect(0, 0, canvasWidth, canvasHeight);
+    this.context.clearRect(0, 0, canvasWidth, canvasHeight);
     
-    imgData = that.context.getImageData(0,0,canvasWidth,canvasHeight);
+    imgData = this.context.getImageData(0,0,canvasWidth,canvasHeight);
 
-    that.updatePixelData_(imgData, [], canvasWidth, canvasHeight);
+    this.updatePixelData_(imgData, [], canvasWidth, canvasHeight);
 
-    that.context.putImageData(imgData, 0,0);
+    this.context.putImageData(imgData, 0,0);
   }else{
-    that.updateFullCache_();
+    this.updateFullCache_();
   }
 }
 
@@ -433,7 +433,7 @@ Heatmap.prototype.mapPixelToValuePixel_ = function(mRow, mCol){
 Heatmap.prototype.initializeCanvas_ = function(map){
   that = this;
   var updateHandler = function(){
-    that.updateCanvas_(that);
+    that.updateCanvas_();
   };
 
   var canvasLayerOptions = {
