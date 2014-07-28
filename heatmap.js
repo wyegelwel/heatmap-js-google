@@ -1,61 +1,3 @@
-function createArray(length) {
-  // console.log(length)
-    var arr = new Array(length || 0),
-        i = length;
-
-    if (arguments.length > 1) {
-        var args = Array.prototype.slice.call(arguments, 1);
-        while(i--) arr[length-1 - i] = createArray.apply(this, args);
-    }else{
-      while(i--) arr[length-1 - i] = 0;
-    }
-
-    return arr;
-}
-
-function distance(x,y){
-    sum = 0;
-    for (var i = 0; i < x.length; i++){
-      sum += Math.pow(x[i] - y[i],2);
-    }
-    return Math.sqrt(sum);
-}
-
-function clamp(x, min, max){
-  return Math.max(Math.min(x, max), min);
-}
-
-function withinBB(p, min, max){
-  return p[0] >= min[0] && p[1] >= min[1] && p[0] <= max[0] && p[1] <= max[1];
-}
-
-function degreesToRadians(deg) {
-  return deg * (Math.PI / 180);
-}
-
-/** @constructor */
-function MercatorProjection() {
-  var TILE_SIZE = 256;
-  this.pixelOrigin_ = {x: TILE_SIZE / 2, y: TILE_SIZE / 2};
-  this.pixelsPerLonDegree_ = TILE_SIZE / 360;
-  this.pixelsPerLonRadian_ = TILE_SIZE / (2 * Math.PI);
-}
-
-MercatorProjection.prototype.fromLatLngToPoint = function(lat, lng) {
-  var me = this;
-  var point = {x: 0, y: 0};
-  var origin = me.pixelOrigin_;
-
-  point.x = origin.x + lng * me.pixelsPerLonDegree_;
-
-  // Truncating to 0.9999 effectively limits latitude to 89.189. This is
-  // about a third of a tile past the edge of the world tile.
-  var siny = clamp(Math.sin(degreesToRadians(lat)), -0.9999,
-      0.9999);
-  point.y = origin.y + 0.5 * Math.log((1 + siny) / (1 - siny)) *
-      -me.pixelsPerLonRadian_;
-  return point;
-};
 
 
 function Heatmap(options){
@@ -110,22 +52,54 @@ function Heatmap(options){
 
     this.heatData = [];
 
-    this.minBB = [180, 90];
-    this.maxBB = [-180, -90]
-
+    /**
+     * Specifies when the cache has been built to denote when we are ready to draw
+     */
     this.cacheReady = false;
+
+    /**
+     * Stores values associated with the canvas that are used throughout the code
+     */
     this.cache = {};
 
+    /**
+     * Stores gradient specified. red to blue to green is the default.
+     */
     this.gradient = new Gradient([[255,0,0], [0,0,255], [0,255,0]])
 
+    /**
+     * Stores the maximum value from the weighted points. This is used to scale them 
+     * down to the range of [0,1]
+     */ 
     this.maxValue = 1;
+
+    /**
+     * Stores the number of unweighted points added to the map. 
+     * This is currently not used.
+     */ 
     this.unweightedCount = 0;
 
+    /**
+     * scale is used to scale the distances calculated and the extent specified so that
+     * zooming will perserve the look of the map
+     */
     this.scale = 1;
+
+    /**
+     * Used to determine scale. It is set to the zoom from the map when it is passed in
+     */
     this.initialZoom = -1;
 
+    /**
+     * Used to determine the opacity of the colors we render
+     */ 
     this.opacity = 220;
 
+    /**
+     * Used to project lat-lng pairs to an x,y grid between 0 and 256. This avoids 
+     * issues associated with lat-lng and non-uniform distance.
+     * http://en.wikipedia.org/wiki/Mercator_projection
+     */
     this.projection = new MercatorProjection();
 
     if (options){
@@ -133,6 +107,10 @@ function Heatmap(options){
     }
 };
 
+/**
+ * Creates the heat value matrix and stores the size as well as helper 
+ *  functions for indexing into the matrix
+ */ 
 Heatmap.prototype.createPixelValueObject_ = function(){
   var projection = this.projection;
   var cHeight = this.canvasLayer.canvas.height;
@@ -140,14 +118,6 @@ Heatmap.prototype.createPixelValueObject_ = function(){
   
   var vMinBB = this.cache.CanvasRowColToPoint(cHeight*2, cWidth*-1);
   var vMaxBB = this.cache.CanvasRowColToPoint(cHeight*-1, cWidth*2);
-
-  console.log("pixel values")
-  console.log(vMinBB);
-  console.log(vMaxBB);
-
-  // var extent = this.kernelExtent();
-  // var rowExtent = Math.max(1, Math.ceil(extent[0]*this.scale));
-  // var colExtent = Math.max(1, Math.ceil(extent[1]*this.scale));
 
   var width = cWidth*3;
   var height = cHeight*3;
@@ -170,13 +140,87 @@ Heatmap.prototype.createPixelValueObject_ = function(){
   }
   
   var pixelValues = createArray(height, width);
-  this.pixelValues = {};
-  this.pixelValues.data = pixelValues;
-  this.pixelValues.width = width;
-  this.pixelValues.height = height;
-  this.pixelValues.latLngToPixelCoord = latLngToPixelCoord;
-  this.pixelValues.pointToPixelCoord = pointToPixelCoord;
-  this.pixelValues.pixelCoordToPoint = pixelCoordToPoint; 
+  this.pixelValues = {data: pixelValues,
+                      width: width,
+                      height: height,
+                      latLngToPixelCoord: latLngToPixelCoord,
+                      pointToPixelCoord: pointToPixelCoord,
+                      pixelCoordToPoint: pixelCoordToPoint};
+}
+
+/**
+ * Modify state of the heatmap. See heatmap option docs for full list of 
+ *  available options
+ */
+Heatmap.prototype.setOptions = function(options){
+  if (options.calculatePixelValue !== undefined){
+    this.calculatePixelValue = options.calculatePixelValue;
+  } else if (options.kernel !== undefined){
+    this.calculatePixelValue = this.defaultCalculatePixelValue_;
+    this.kernel = options.kernel;
+  } else if (options.radius !== undefined){
+    this.calculatePixelValue = this.defaultCalculatePixelValue_;
+    this.kernel = this.defaultKernel_(options.radius);
+    var ceilRadius = Math.ceil(options.radius);
+    this.kernelExtent = function (){return [ceilRadius, ceilRadius];}
+  } 
+
+  // This is intentionally put after the big if/elseif block to allow 
+  //  for custom kernel extents
+  if (options.kernelExtent !== undefined){
+    this.kernelExtent = options.kernelExtent;
+  }
+
+  if (options.MapType = "contour"){
+    if (this.kernalExtent !== undefined){
+      this.calculatePixelValue = this.contourCalculatePixelValue_(options.radius);
+    }
+  }
+
+  if (options.gradient !== undefined){
+    this.gradient = new Gradient(options.gradient);
+  }
+
+  if (options.opacity !== undefined){
+    this.opacity = options.opacity;
+  }
+
+  if (options.map !== undefined){
+    this.map = options.map;
+    this.initialZoom = map.zoom;
+    this.scale = 1;
+    this.initializeCanvas_(map);
+  }
+  this.updateFullCache_();
+  this.updateCanvas_(this);
+}
+
+/**
+ * Adds the list of points to heatData and redraws
+ *
+ * @param points: list of lists of form: [[lat, lng, value], ... ]
+ */
+Heatmap.prototype.addPoints = function(points){
+  for (var i = 0; i < points.length; i++){
+    var point = points[i];
+    this.heatData.push(point);
+    if (point.length == 3){ // weighted
+      this.maxValue = Math.max(point[2], this.maxValue);
+    } else{
+      this.unweightedCount += 1;
+    }
+  }
+  this.updateFullCache_();
+  this.updateCanvas_(this);
+}
+
+/**
+ * Adds point to heatData and redraws
+ *
+ * @param point: list with form [lat, lng, value]
+ */
+Heatmap.prototype.addPoint = function(point){
+  this.addPoints([point]);
 }
 
 /**
@@ -243,11 +287,15 @@ Heatmap.prototype.updatePixelData_ = function(imgData, pixelValues, width, heigh
         imgData.data[(col+row*width)*4 + 0] = color[0];
         imgData.data[(col+row*width)*4 + 1] = color[1];
         imgData.data[(col+row*width)*4 + 2] = color[2];
-        imgData.data[(col+row*width)*4 + 3] = v>1e-1 ? this.opacity : 0;  
+        imgData.data[(col+row*width)*4 + 3] = v>1e-3 ? this.opacity : v*this.opacity;  
       } 
   }
 }
 
+/**
+ * Returns true if our heat value matrix needs to be updated because the map's
+ *  bounds are no longer contained in the cache
+ */ 
 Heatmap.prototype.pixelValuesNeedsUpdate_ = function(){
   var canvasWidth = this.canvasLayer.canvas.width;
   var canvasHeight = this.canvasLayer.canvas.height;
@@ -260,6 +308,10 @@ Heatmap.prototype.pixelValuesNeedsUpdate_ = function(){
   return topLeft === null || bottomRight === null; 
 }
 
+/**
+ * Umbrella function that handles redrawing the canvas as well as updating 
+ *  caches as necessary
+ */ 
 Heatmap.prototype.updateCanvas_ = function(that){
   if (that.cacheReady){
     console.log("update")
@@ -284,6 +336,9 @@ Heatmap.prototype.updateCanvas_ = function(that){
   }
 }
 
+/**
+ * Updates data involved with the canvas and caches it. 
+ */
 Heatmap.prototype.updateCanvasCache_ = function(){
   var bounds = this.map.getBounds();
 
@@ -320,6 +375,12 @@ Heatmap.prototype.updateCanvasCache_ = function(){
   this.cache.yStep = yStep;
 }
 
+/**
+ * We cache two units of data. The first is data about the canvas and map we 
+ *  are working with. The second is a matrix of heat values that we calculate
+ *  from the points provided by the user. This function is the umbrella 
+ *  function called to update both units of data
+ */ 
 Heatmap.prototype.updateFullCache_ = function(){
   if (this.map.getBounds() !== undefined &&  this.heatData.length > 0){
     this.updateCanvasCache_();
@@ -329,30 +390,38 @@ Heatmap.prototype.updateFullCache_ = function(){
 
     this.generatePixelValues_(); 
 
-    this.mapPixelToValuePixel_ = function(mRow, mCol){
-      var canvasHeight = this.canvasLayer.canvas.height;
-      var valueHeight = this.pixelValues.height;
-      var valueWidth = this.pixelValues.width;
-      
-      var cPoint = this.cache.CanvasRowColToPoint(mRow, mCol);
-      var x = cPoint.x; var y = cPoint.y;
-
-      var valuePixel = this.pixelValues.pointToPixelCoord(x,y)
-      var within = valuePixel.row >= 0 && valuePixel.col >= 0 
-                && valuePixel.row < valueHeight && valuePixel.col < valueWidth; 
-      if (withinBB([valuePixel.row, valuePixel.col],[0,0], 
-                    [valueHeight-1, valueWidth])){
-        valuePixel.x = x;
-        valuePixel.y = y;
-        valuePixel.width = valueWidth;
-        valuePixel.height = valueHeight;
-        return valuePixel;
-      } else{
-        return null;//{valuePixel: valuePixel, x: x, y: y, width: valueWidth, height: valueHeight, this:this};
-      }
-    }
-
     this.cacheReady = true;
+  }
+}
+
+/**
+ * Maps the (map_row, map_col) pair of an element on the canvas to a
+ *  (value_row, value_col) pair which indexes into the heat value matrix.
+ *  If the mapped heat value index is outside of the matrix, null is returned.   
+ *
+ * @param mRow: row index into map canvas
+ * @param mCol: col index into map canvas
+ */
+Heatmap.prototype.mapPixelToValuePixel_ = function(mRow, mCol){
+  var canvasHeight = this.canvasLayer.canvas.height;
+  var valueHeight = this.pixelValues.height;
+  var valueWidth = this.pixelValues.width;
+  
+  var cPoint = this.cache.CanvasRowColToPoint(mRow, mCol);
+  var x = cPoint.x; var y = cPoint.y;
+
+  var valuePixel = this.pixelValues.pointToPixelCoord(x,y)
+  var within = valuePixel.row >= 0 && valuePixel.col >= 0 
+            && valuePixel.row < valueHeight && valuePixel.col < valueWidth; 
+  if (withinBB([valuePixel.row, valuePixel.col],[0,0], 
+                [valueHeight-1, valueWidth])){
+    valuePixel.x = x;
+    valuePixel.y = y;
+    valuePixel.width = valueWidth;
+    valuePixel.height = valueHeight;
+    return valuePixel;
+  } else{
+    return null
   }
 }
 
@@ -383,19 +452,19 @@ Heatmap.prototype.initializeCanvas_ = function(map){
   });
 }
 
-Heatmap.prototype.defaultKernel= function(radius){
+Heatmap.prototype.defaultKernel_= function(radius){
   function kernel(distPixel){
     return 2.5*Math.exp(-(1/2)*distPixel*distPixel/radius)/Math.sqrt(2*Math.PI);
   }
   return kernel;
 }
 
-Heatmap.prototype.defaultCalculatePixelValue = function(oldValue, pixelCoord, heatPoint, scaledDist){
+Heatmap.prototype.defaultCalculatePixelValue_ = function(oldValue, pixelCoord, heatPoint, scaledDist){
   var kernelValue = this.kernel(distance(pixelCoord, heatPoint[0]))
   return oldValue + kernelValue*heatPoint[1];
 }
 
-Heatmap.prototype.contourCalculatePixelValue = function(radius){
+Heatmap.prototype.contourCalculatePixelValue_ = function(radius){
   var contourFunc = function(oldValue, pixelCoord, heatPoint, scaledDist){
     if (scaledDist < radius){
       return Math.max(oldValue, heatPoint[1]);
@@ -406,80 +475,17 @@ Heatmap.prototype.contourCalculatePixelValue = function(radius){
   return contourFunc;
 }
 
-Heatmap.prototype.setOptions = function(options){
-  if (options.calculatePixelValue !== undefined){
-    this.calculatePixelValue = options.calculatePixelValue;
-  } else if (options.kernel !== undefined){
-    this.calculatePixelValue = this.defaultCalculatePixelValue;
-    this.kernel = options.kernel;
-  } else if (options.radius !== undefined){
-    this.calculatePixelValue = this.defaultCalculatePixelValue;
-    this.kernel = this.defaultKernel(options.radius);
-    var ceilRadius = Math.ceil(options.radius);
-    this.kernelExtent = function (){return [ceilRadius, ceilRadius];}
-    if (options.MapType = "contour"){
-      this.calculatePixelValue = this.contourCalculatePixelValue(options.radius);
-    }
-  } 
-  // This is intentionally put after the big if/elseif block to allow 
-  //  for custom kernel extents
-  if (options.kernelExtent !== undefined){
-    this.kernelExtent = options.kernelExtent;
-  }
 
-  if (options.gradient !== undefined){
-    this.gradient = new Gradient(options.gradient);
-  }
-
-  if (options.opacity !== undefined){
-    this.opacity = options.opacity;
-  }
-
-  if (options.map !== undefined){
-    this.map = options.map;
-    this.initialZoom = map.zoom;
-    this.scale = 1;
-    this.initializeCanvas_(map);
-  }
-  this.updateFullCache_();
-  this.updateCanvas_(this);
-}
+/***********************************************************
+ * Helper Classes
+ ***********************************************************/
 
 /**
- * Adds the list of points to heatData and redraws
- *
- * @param points: list of lists of form: [[lat, lng, value], ... ]
+ * Class to represent a gradient with equal spacing between colors. 
+ *  
+ * @param colors: a list where each element is either a 3-tuple or 4-tuple
+ *                  which represents the rgb or rgba of the color (0-255)
  */
-Heatmap.prototype.addPoints = function(points){
-  for (var i = 0; i < points.length; i++){
-    var point = points[i];
-    this.heatData.push(point);
-    if (point.length == 3){ // weighted
-      this.maxValue = Math.max(point[2], this.maxValue);
-    } else{
-      this.unweightedCount += 1;
-    }
-    
-    this.minBB = [Math.min(point[0], this.minBB[0]), 
-                    Math.min(point[1], this.minBB[1])];
-    this.maxBB = [Math.max(point[0], this.maxBB[0]), 
-                    Math.max(point[1], this.maxBB[1])]
-  }
-  this.updateFullCache_();
-  this.updateCanvas_(this);
-}
-
-/**
- * Adds point to heatData and redraws
- *
- * @param point: list with form [lat, lng, value]
- */
-Heatmap.prototype.addPoint = function(point){
-  this.addPoints([point]);
-}
-
-
-
 function Gradient(colors){
   var gradientColors = [];
   colors.map(function(color){
@@ -522,4 +528,78 @@ Gradient.prototype.interpolateColor = function(x){
   } else{
     throw "x (" + x +") must be between 0 and 1";
   }
+}
+
+/** @constructor. Code from google's mercator projection example: 
+https://developers.google.com/maps/documentation/javascript/examples/map-coordinates */
+function MercatorProjection() {
+  var TILE_SIZE = 256;
+  this.pixelOrigin_ = {x: TILE_SIZE / 2, y: TILE_SIZE / 2};
+  this.pixelsPerLonDegree_ = TILE_SIZE / 360;
+  this.pixelsPerLonRadian_ = TILE_SIZE / (2 * Math.PI);
+}
+/*
+ * Returns the Mercator projection of the (lat, lng) pair. The returned value
+ *  is an object with an 'x' and 'y' value defined. 
+ *  Both x and y has range [0,256]
+ *
+ * See https://developers.google.com/maps/documentation/javascript/maptypes#WorldCoordinates
+ *  for a solid treatment of the projection
+ *
+ * @param lat: latitude of point
+ * @param lng: longitude of point
+ */
+MercatorProjection.prototype.fromLatLngToPoint = function(lat, lng) {
+  var me = this;
+  var point = {x: 0, y: 0};
+  var origin = me.pixelOrigin_;
+
+  point.x = origin.x + lng * me.pixelsPerLonDegree_;
+
+  // Truncating to 0.9999 effectively limits latitude to 89.189. This is
+  // about a third of a tile past the edge of the world tile.
+  var siny = clamp(Math.sin(degreesToRadians(lat)), -0.9999,
+      0.9999);
+  point.y = origin.y + 0.5 * Math.log((1 + siny) / (1 - siny)) *
+      -me.pixelsPerLonRadian_;
+  return point;
+};
+
+/**
+ * Utility functions
+ */
+
+function createArray(length) {
+  // console.log(length)
+    var arr = new Array(length || 0),
+        i = length;
+
+    if (arguments.length > 1) {
+        var args = Array.prototype.slice.call(arguments, 1);
+        while(i--) arr[length-1 - i] = createArray.apply(this, args);
+    }else{
+      while(i--) arr[length-1 - i] = 0;
+    }
+
+    return arr;
+}
+
+function distance(x,y){
+    var sum = 0;
+    for (var i = 0; i < x.length; i++){
+      sum += Math.pow(x[i] - y[i],2);
+    }
+    return Math.sqrt(sum);
+}
+
+function clamp(x, min, max){
+  return Math.max(Math.min(x, max), min);
+}
+
+function withinBB(p, min, max){
+  return p[0] >= min[0] && p[1] >= min[1] && p[0] <= max[0] && p[1] <= max[1];
+}
+
+function degreesToRadians(deg) {
+  return deg * (Math.PI / 180);
 }
