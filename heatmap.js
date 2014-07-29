@@ -219,7 +219,7 @@ Heatmap.prototype.addPoints = function(points){
     var point = points[i];
     this.heatData.push(point);
     if (point.length == 3){ // weighted
-      this.maxValue = Math.max(point[2], this.maxValue);
+      // this.maxValue = Math.max(point[2], this.maxValue);
     } else{
       this.unweightedCount += 1;
     }
@@ -256,7 +256,7 @@ Heatmap.prototype.generatePixelValues_ = function(){
     // Wrangle data in to correct transforms and form
     var llValue = this.heatData[i];
     var lat = llValue[0]; var lng = llValue[1];
-    var value = llValue.length == 3 ? llValue[2]/this.maxValue : 1.0;
+    var value = llValue.length == 3 ? llValue[2]: 1.0;
 
     var pixelCoord = this.pixelValues.latLngToPixelCoord(lat, lng)
     var heatRowCol = [pixelCoord.row, pixelCoord.col];
@@ -278,6 +278,7 @@ Heatmap.prototype.generatePixelValues_ = function(){
         var scaledDist = distance([row,col], heatRowCol)/this.scale
         pixelValues[row][col] = this.calculatePixelValue(oldValue, [row, col], 
                                                           heatPoint, scaledDist);
+        this.maxValue = Math.max(pixelValues[row][col], this.maxValue);
       }
     }                
   }
@@ -296,7 +297,8 @@ Heatmap.prototype.updatePixelData_ = function(imgData, pixelValues, width, heigh
   var offSet = this.mapPixelToValuePixel_(0, 0);
   for (var row = 0; row < height; row++){
       for (var col = 0; col < width; col++){
-        var v = clamp(pixelValues[offSet.row + row][offSet.col + col], 0, 1);
+        var v = pixelValues[offSet.row + row][offSet.col + col];
+        v = clamp(v/this.maxValue, 0, 1);
         var color = this.gradient.interpolateColor(v);
         imgData.data[(col+row*width)*4 + 0] = color[0];
         imgData.data[(col+row*width)*4 + 1] = color[1];
@@ -328,7 +330,6 @@ Heatmap.prototype.pixelValuesNeedsUpdate_ = function(){
  */ 
 Heatmap.prototype.updateCanvas_ = function(){
   if (this.cacheReady){
-    console.log("update")
     var canvasWidth = this.canvasLayer.canvas.width;
     var canvasHeight = this.canvasLayer.canvas.height;
 
@@ -361,9 +362,6 @@ Heatmap.prototype.updateCanvasCache_ = function(){
   var southWest = bounds.getSouthWest();
   var maxBB = this.projection.fromLatLngToPoint(northEast.lat(), northEast.lng());
   var minBB = this.projection.fromLatLngToPoint(southWest.lat(), southWest.lng());
-
-  console.log(minBB);
-  console.log(maxBB);
 
   var yRange = maxBB.y - minBB.y;
   var xRange = maxBB.x - minBB.x
@@ -400,7 +398,6 @@ Heatmap.prototype.updateFullCache_ = function(){
     this.updateCanvasCache_();
 
     this.scale = Math.max(1, Math.pow(2, map.zoom - this.initialZoom))
-    console.log(this.scale);
 
     this.generatePixelValues_(); 
 
@@ -584,7 +581,6 @@ MercatorProjection.prototype.fromLatLngToPoint = function(lat, lng) {
  */
 
 function createArray(length) {
-  // console.log(length)
     var arr = new Array(length || 0),
         i = length;
 
