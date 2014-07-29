@@ -161,19 +161,31 @@ Heatmap.prototype.setOptions = function(options){
   } else if (options.radius !== undefined){
     this.calculatePixelValue = this.defaultCalculatePixelValue_;
     this.kernel = this.defaultKernel_(options.radius);
+    this.radius = options.radius;
     var ceilRadius = Math.ceil(options.radius);
     this.kernelExtent = function (){return [ceilRadius, ceilRadius];}
+
+    this.initialZoom = map.zoom;
+    this.scale = 1;
   } 
 
   // This is intentionally put after the big if/elseif block to allow 
   //  for custom kernel extents
   if (options.kernelExtent !== undefined){
     this.kernelExtent = options.kernelExtent;
+
+      
+    this.initialZoom = map.zoom;
+    this.scale = 1;
   }
 
-  if (options.MapType = "contour"){
-    if (this.kernalExtent !== undefined){
-      this.calculatePixelValue = this.contourCalculatePixelValue_(options.radius);
+  if (options.MapType === "contour"){
+    if (this.radius !== undefined){
+      this.calculatePixelValue = this.contourCalculatePixelValue_(this.radius);
+    }
+  } else if (options.MapType === "heatmap"){
+    if (this.radius !== undefined){
+      this.calculatePixelValue = this.defaultCalculatePixelValue_;
     }
   }
 
@@ -191,6 +203,8 @@ Heatmap.prototype.setOptions = function(options){
     this.scale = 1;
     this.initializeCanvas_(map);
   }
+
+
   this.updateFullCache_();
   this.updateCanvas_();
 }
