@@ -188,10 +188,12 @@ Heatmap.prototype.setOptions = function(options){
   if (options.MapType === "contour"){
     if (this.radius !== undefined){
       this.calculatePixelValue = this.contourCalculatePixelValue_(this.radius);
+      this.maxValue = 1;
     }
   } else if (options.MapType === "heatmap"){
     if (this.radius !== undefined){
       this.calculatePixelValue = this.defaultCalculatePixelValue_;
+      this.maxValue = 1;
     }
   }
 
