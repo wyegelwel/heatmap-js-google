@@ -1,12 +1,12 @@
 # heatmap-js-google 
 Heatmap utility for google maps that provides users with a greater control.
 
-When working with google map's builtin heatmap utility, I found I wanted greater control over how points were drawn. This project provides users with built-ins for a standard heatmap as well as a contour map (see the examples below). If you find yourself wanting greater control than that, we expose functionality to pass in functions that will process the points you provide. You have all the control you could want.
+When working with google map's builtin heatmap utility, I found I wanted greater control over how points were drawn. This project provides users with built-ins for a standard heatmap as well as a contour map (see the examples below). If you find yourself wanting greater control than that, you may provide your own functions to deal with how points are handled. You have all the control you could want.
 
 # Examples
 
-* Heatmap vs Contour map: 
-* Mouse over add points: 
+* [Heatmap vs Contour map](http://wyegelwel.github.io/heatmap-js-google/examples/heatmapVscontourmap.html)
+* [Mouse over add points](http://wyegelwel.github.io/heatmap-js-google/examples/mouseOver.html) 
 
 
 
