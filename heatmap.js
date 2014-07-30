@@ -138,6 +138,10 @@ Heatmap.prototype.createPixelValueObject_ = function(){
       return {y: (height-row-1)*yStep+vMinBB.y,
                x: col*xStep+vMinBB.x};
   }
+
+  var extent = this.kernelExtent();
+  var rowExtent = Math.max(1, Math.ceil(extent[0]*this.scale));
+  var colExtent = Math.max(1, Math.ceil(extent[1]*this.scale));
   
   var pixelValues = createArray(height, width);
   this.pixelValues = {data: pixelValues,
@@ -145,7 +149,9 @@ Heatmap.prototype.createPixelValueObject_ = function(){
                       height: height,
                       latLngToPixelCoord: latLngToPixelCoord,
                       pointToPixelCoord: pointToPixelCoord,
-                      pixelCoordToPoint: pixelCoordToPoint};
+                      pixelCoordToPoint: pixelCoordToPoint,
+                      rowExtent: rowExtent,
+                      colExtent: colExtent};
 }
 
 /**
@@ -224,7 +230,7 @@ Heatmap.prototype.addPoints = function(points){
       this.unweightedCount += 1;
     }
   }
-  this.updateFullCache_();
+  this.addPointToPixelValues_(point);
   this.updateCanvas_();
 }
 
@@ -237,6 +243,41 @@ Heatmap.prototype.addPoint = function(point){
   this.addPoints([point]);
 }
 
+Heatmap.prototype.addPointToPixelValues_ = function(llValue){
+  if (this.cacheReady){
+    // Wrangle data in to correct transforms and form
+    var lat = llValue[0]; var lng = llValue[1];
+    var value = llValue.length == 3 ? llValue[2]: 1.0;
+
+    var pixelCoord = this.pixelValues.latLngToPixelCoord(lat, lng)
+    var heatRowCol = [pixelCoord.row, pixelCoord.col];
+    var heatPoint = [heatRowCol, value];
+    // Bounds for loop
+
+    if (withinBB([pixelCoord.row, pixelCoord.col], [0, 0],
+                  [this.pixelValues.height-1, this.pixelValues.width-1])){
+      var pixelValues = this.pixelValues.data;
+
+      var rowExtent = this.pixelValues.rowExtent;
+      var colExtent = this.pixelValues.colExtent;
+
+      var minRow = Math.max(0, pixelCoord.row-rowExtent);
+      var maxRow = Math.min(this.pixelValues.height-1, pixelCoord.row+rowExtent);
+      var minCol = Math.max(0, pixelCoord.col-colExtent);
+      var maxCol = Math.min(this.pixelValues.width-1,pixelCoord.col+colExtent);
+      for (var row = minRow; row <= maxRow; row++){
+        for (var col = minCol; col <= maxCol; col++){
+          var oldValue = pixelValues[row][col];
+          var scaledDist = distance([row,col], heatRowCol)/this.scale
+          pixelValues[row][col] = this.calculatePixelValue(oldValue, [row, col], 
+                                                            heatPoint, scaledDist);
+          this.maxValue = Math.max(pixelValues[row][col], this.maxValue);
+        }
+      }     
+    } 
+  }
+}
+
 /**
  * Returns a 2d matrix where each element corresponds to a pixel on the map
  *  and the value is where on the heatmap to sample from.
@@ -246,41 +287,11 @@ Heatmap.prototype.addPoint = function(point){
  */
 Heatmap.prototype.generatePixelValues_ = function(){
   this.createPixelValueObject_();
-  var pixelValues = this.pixelValues.data;
-
-  var extent = this.kernelExtent();
-  var rowExtent = Math.max(1, Math.ceil(extent[0]*this.scale));
-  var colExtent = Math.max(1, Math.ceil(extent[1]*this.scale));
+  
 
   for (var i = 0; i < this.heatData.length; i++){
-    // Wrangle data in to correct transforms and form
     var llValue = this.heatData[i];
-    var lat = llValue[0]; var lng = llValue[1];
-    var value = llValue.length == 3 ? llValue[2]: 1.0;
-
-    var pixelCoord = this.pixelValues.latLngToPixelCoord(lat, lng)
-    var heatRowCol = [pixelCoord.row, pixelCoord.col];
-    var heatPoint = [heatRowCol, value];
-    // Bounds for loop
-
-    if (!withinBB([pixelCoord.row, pixelCoord.col], [0, 0],
-                  [this.pixelValues.height-1, this.pixelValues.width-1])){
-      continue;
-    } 
-    
-    var minRow = Math.max(0, pixelCoord.row-rowExtent);
-    var maxRow = Math.min(this.pixelValues.height-1, pixelCoord.row+rowExtent);
-    var minCol = Math.max(0, pixelCoord.col-colExtent);
-    var maxCol = Math.min(this.pixelValues.width-1,pixelCoord.col+colExtent);
-    for (var row = minRow; row <= maxRow; row++){
-      for (var col = minCol; col <= maxCol; col++){
-        var oldValue = pixelValues[row][col];
-        var scaledDist = distance([row,col], heatRowCol)/this.scale
-        pixelValues[row][col] = this.calculatePixelValue(oldValue, [row, col], 
-                                                          heatPoint, scaledDist);
-        this.maxValue = Math.max(pixelValues[row][col], this.maxValue);
-      }
-    }                
+    this.addPointToPixelValues_(llValue);               
   }
 }
 
@@ -399,9 +410,9 @@ Heatmap.prototype.updateFullCache_ = function(){
 
     this.scale = Math.max(1, Math.pow(2, map.zoom - this.initialZoom))
 
-    this.generatePixelValues_(); 
-
     this.cacheReady = true;
+
+    this.generatePixelValues_(); 
   }
 }
 
