@@ -161,9 +161,11 @@ Heatmap.prototype.createPixelValueObject_ = function(){
 Heatmap.prototype.setOptions = function(options){
   if (options.calculatePixelValue !== undefined){
     this.calculatePixelValue = options.calculatePixelValue;
+    this.maxValue = 1;
   } else if (options.kernel !== undefined){
     this.calculatePixelValue = this.defaultCalculatePixelValue_;
     this.kernel = options.kernel;
+    this.maxValue = 1;
   } else if (options.radius !== undefined){
     this.calculatePixelValue = this.defaultCalculatePixelValue_;
     this.kernel = this.defaultKernel_(options.radius);
@@ -173,6 +175,7 @@ Heatmap.prototype.setOptions = function(options){
 
     this.initialZoom = map.zoom;
     this.scale = 1;
+    this.maxValue = 1;
   } 
 
   // This is intentionally put after the big if/elseif block to allow 
