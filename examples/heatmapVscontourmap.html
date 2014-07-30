@@ -1,0 +1,93 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Heatmap vs contour map</title>
+    <style>
+      html, body, #map-div {
+        margin: 0;
+        padding: 0;
+        height: 95%;
+      }
+    </style>
+
+    <script src="http://maps.googleapis.com/maps/api/js?sensor=false"></script>
+    <script src="../CanvasLayer.js"></script>
+    <script src="../heatmap.js"></script>
+    <script src="https://code.jquery.com/jquery-2.1.1.min.js"></script>
+    <script src="data/testPath7.js"> </script>
+
+    <script>
+      function placeMarker(lat,lng) { new google.maps.Marker({position: new google.maps.LatLng(lat,lng), map: map})}
+
+      var map;
+
+      function init() {
+        // initialize the map
+        var ny = new google.maps.LatLng(40.742861, -74.014206)
+        var mapOptions = {
+          zoom: 13,
+          center: ny,
+          mapTypeId: google.maps.MapTypeId.ROADMAP,
+          styles: [
+            {
+              featureType: 'water',
+              stylers: [{ color: '#c3cfdd'}]
+            },
+            {
+              featureType: 'poi',
+              stylers: [{visibility: 'off'}]
+            }
+          ]
+        };
+
+
+        mapDiv = document.getElementById('map-div');
+        map = new google.maps.Map(mapDiv, mapOptions);
+
+
+
+        // Wrangle data into correct form. You may ignore this
+        var maxValue = 0;
+        for (var i = 0; i < data.length; i++){
+          maxValue = Math.max(data[i][2], maxValue);
+        }
+
+        for (var i = 0; i < data.length; i++){
+          data[i][2] = 1-data[i][2]/maxValue;
+          if (Math.abs(1 - data[i][2]) < 1e-12 ){
+            placeMarker(data[i][0], data[i][1]);
+          }
+        }
+
+
+
+        heatmap = new Heatmap({map: map, MapType: "contour", radius: 3})
+        heatmap.addPoints(data)
+
+
+        document.getElementById('heatBtn').addEventListener('click', function(){
+
+          heatmap.setOptions({MapType: "heatmap", radius: 4});
+          console.log("heat")
+        });
+
+        document.getElementById('contourBtn').addEventListener('click', function(){
+          heatmap.setOptions({MapType: "contour", radius: 3});
+        });
+      }
+
+      document.addEventListener('DOMContentLoaded', init, false);
+      
+      
+
+    </script>
+  </head>
+
+  <body>
+    <div id="map-div"></div>
+    <p> The map above shows the travel time from the marker to all other points in Manhattan. Try clicking between heatmap and contour map to see the difference </p>
+    <button id="heatBtn"> Heatmap </button>
+    <button id="contourBtn"> Contour map </button>
+  </body>
+</html>

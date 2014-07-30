@@ -2,12 +2,12 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Hello 2d World</title>
+    <title>Mouseover</title>
     <style>
       html, body, #map-div {
         margin: 0;
         padding: 0;
-        height: 100%;
+        height: 97%;
       }
     </style>
 
@@ -15,18 +15,14 @@
     <script src="../CanvasLayer.js"></script>
     <script src="../heatmap.js"></script>
     <script src="https://code.jquery.com/jquery-2.1.1.min.js"></script>
-    <script src="data/testPath4.js"> </script>
-
     <script>
-      function placeMarker(lat,lng) { new google.maps.Marker({position: new google.maps.LatLng(lat,lng), map: map})}
-
       var map;
 
       function init() {
         // initialize the map
         var ny = new google.maps.LatLng(40.742861, -74.014206)
         var mapOptions = {
-          zoom: 13,
+          zoom: 11,
           center: ny,
           mapTypeId: google.maps.MapTypeId.ROADMAP,
           styles: [
@@ -40,19 +36,21 @@
             }
           ]
         };
-        mapDiv = document.getElementById('map-div');
 
+
+        mapDiv = document.getElementById('map-div');
         map = new google.maps.Map(mapDiv, mapOptions);
 
-        heatmap = new Heatmap({map: map,
-                               radius: 10});
-        heatmap.addPoints(data)
-        
-      }
-      
 
+        heatmap = new Heatmap({map: map, radius: 60, opacity: 150})
+
+        google.maps.event.addListener(map, "mousemove", function(e){
+          heatmap.addPoint([e.latLng.lat(), e.latLng.lng()]);
+        })
+      }
 
       document.addEventListener('DOMContentLoaded', init, false);
+      
     </script>
   </head>
 
