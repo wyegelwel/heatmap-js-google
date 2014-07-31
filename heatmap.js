@@ -3,7 +3,7 @@
 function Heatmap(options){
 
     /**
-     * Returns a value between 0 and 1 which is used to scale the value of a 
+     * Returns a value  which is used to scale the value of a 
      * point
      * 
      * @param distance between heatmap point and pixel in pixel space     
@@ -108,53 +108,6 @@ function Heatmap(options){
 };
 
 /**
- * Creates the heat value matrix and stores the size as well as helper 
- *  functions for indexing into the matrix
- */ 
-Heatmap.prototype.createPixelValueObject_ = function(){
-  var projection = this.projection;
-  var cHeight = this.canvasLayer.canvas.height;
-  var cWidth = this.canvasLayer.canvas.width; 
-  
-  var vMinBB = this.cache.CanvasRowColToPoint(cHeight*2, cWidth*-1);
-  var vMaxBB = this.cache.CanvasRowColToPoint(cHeight*-1, cWidth*2);
-
-  var width = cWidth*3;
-  var height = cHeight*3;
-
-  var yStep = this.cache.yStep; xStep = this.cache.xStep;
-
-  function latLngToPixelCoord(lat, lng){
-      point = projection.fromLatLngToPoint(lat, lng);
-      return pointToPixelCoord(point.x, point.y);
-  }
-
-  function pointToPixelCoord(x,y){
-    return {row: (height-1) - Math.floor((y-vMinBB.y)/yStep), 
-              col: Math.floor((x-vMinBB.x)/xStep)}
-  }
-
-  function pixelCoordToPoint(row, col){
-      return {y: (height-row-1)*yStep+vMinBB.y,
-               x: col*xStep+vMinBB.x};
-  }
-
-  var extent = this.kernelExtent();
-  var rowExtent = Math.max(1, Math.ceil(extent[0]*this.scale));
-  var colExtent = Math.max(1, Math.ceil(extent[1]*this.scale));
-  
-  var pixelValues = createArray(height, width);
-  this.pixelValues = {data: pixelValues,
-                      width: width,
-                      height: height,
-                      latLngToPixelCoord: latLngToPixelCoord,
-                      pointToPixelCoord: pointToPixelCoord,
-                      pixelCoordToPoint: pixelCoordToPoint,
-                      rowExtent: rowExtent,
-                      colExtent: colExtent};
-}
-
-/**
  * Modify state of the heatmap. See heatmap option docs for full list of 
  *  available options
  */
@@ -243,6 +196,53 @@ Heatmap.prototype.addPoints = function(points){
  */
 Heatmap.prototype.addPoint = function(point){
   this.addPoints([point]);
+}
+
+/**
+ * Creates the heat value matrix and stores the size as well as helper 
+ *  functions for indexing into the matrix
+ */ 
+Heatmap.prototype.createPixelValueObject_ = function(){
+  var projection = this.projection;
+  var cHeight = this.canvasLayer.canvas.height;
+  var cWidth = this.canvasLayer.canvas.width; 
+  
+  var vMinBB = this.cache.CanvasRowColToPoint(cHeight*2, cWidth*-1);
+  var vMaxBB = this.cache.CanvasRowColToPoint(cHeight*-1, cWidth*2);
+
+  var width = cWidth*3;
+  var height = cHeight*3;
+
+  var yStep = this.cache.yStep; xStep = this.cache.xStep;
+
+  function latLngToPixelCoord(lat, lng){
+      point = projection.fromLatLngToPoint(lat, lng);
+      return pointToPixelCoord(point.x, point.y);
+  }
+
+  function pointToPixelCoord(x,y){
+    return {row: (height-1) - Math.floor((y-vMinBB.y)/yStep), 
+              col: Math.floor((x-vMinBB.x)/xStep)}
+  }
+
+  function pixelCoordToPoint(row, col){
+      return {y: (height-row-1)*yStep+vMinBB.y,
+               x: col*xStep+vMinBB.x};
+  }
+
+  var extent = this.kernelExtent();
+  var rowExtent = Math.max(1, Math.ceil(extent[0]*this.scale));
+  var colExtent = Math.max(1, Math.ceil(extent[1]*this.scale));
+  
+  var pixelValues = createArray(height, width);
+  this.pixelValues = {data: pixelValues,
+                      width: width,
+                      height: height,
+                      latLngToPixelCoord: latLngToPixelCoord,
+                      pointToPixelCoord: pointToPixelCoord,
+                      pixelCoordToPoint: pixelCoordToPoint,
+                      rowExtent: rowExtent,
+                      colExtent: colExtent};
 }
 
 Heatmap.prototype.addPointToPixelValues_ = function(llValue){
@@ -525,7 +525,7 @@ function Gradient(colors){
 };
 
 /**
- * Returns a rgba of the color requested by x along the gradient
+ * Returns a rgb of the color requested by x along the gradient
  *
  * @param x is a float between 0 and 1 indexing into the gradient
  */
