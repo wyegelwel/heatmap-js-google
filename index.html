@@ -756,11 +756,170 @@ body .task-list{
 <h3>
 <a name="user-content-heatmap-class" class="anchor" href="#heatmap-class" aria-hidden="true"><span class="octicon octicon-link"></span></a>Heatmap class</h3>
 
-<h3>
-<a name="user-content-heatmap-options" class="anchor" href="#heatmap-options" aria-hidden="true"><span class="octicon octicon-link"></span></a>Heatmap options</h3>
+<h5>
+<a name="user-content-caching" class="anchor" href="#caching" aria-hidden="true"><span class="octicon octicon-link"></span></a>Caching</h5>
 
-<ul>
-<li>Map: google maps map object</li>
-<li>Opacity: between 0 and 255 used to determine alpha of colors</li>
-<li>MapType: either "heatmap" or "contour". See heatmapVscontourmap.html for example.</li>
-</ul></body></html>
+<p>Calculating the influence of each point to the surrouding area is expensive and therefore we cache it and compute it infrequently. This cache is a matrix of values that correspond to a region three times larger than the visible screen. Once you pan outside of this region, we must recompute the cache. Zooming also requires the heatmap to recompute the cache.</p>
+
+<h6>
+<a name="user-content-drawing" class="anchor" href="#drawing" aria-hidden="true"><span class="octicon octicon-link"></span></a>Drawing</h6>
+
+<p>Using the <a href="#caching">cache of values</a>, we interpolate the gradient for each pixel to calculate the color and push it to the screen. </p>
+
+<h5>
+<a name="user-content-constructor" class="anchor" href="#constructor" aria-hidden="true"><span class="octicon octicon-link"></span></a>Constructor</h5>
+
+<table>
+<thead><tr>
+<th>Constructor</th>
+<th>Description</th>
+</tr></thead>
+<tbody><tr>
+<td>Heatmap(options)</td>
+<td>Creates heatmap and passes the options to the method <em>setOptions()</em>.</td>
+</tr></tbody>
+</table><h6>
+<a name="user-content-methods" class="anchor" href="#methods" aria-hidden="true"><span class="octicon octicon-link"></span></a>Methods</h6>
+
+<table>
+<thead><tr>
+<th>Method</th>
+<th>Return Value</th>
+<th>Description</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>setOptions(options)</td>
+<td>None</td>
+<td>Modify state of the heatmap. See heatmap option below for full list of available options</td>
+</tr>
+<tr>
+<td>addPoint(point)</td>
+<td>None</td>
+<td>Adds point to heatmap and redraws. <strong><em>point</em></strong> is expected to be a list with the form [lat, lng, value]</td>
+</tr>
+<tr>
+<td>addPoints(points)</td>
+<td>None</td>
+<td>Adds a list of points to the heatmap and redraws. Each element <strong><em>points</em></strong> is expected to be a list with the form [lat, lng, value]. Therefore, <strong><em>points</em></strong> should take the form [[lat1, lng1, value1], [lat2, lng2, value2], ...]</td>
+</tr>
+</tbody>
+</table><h4>
+<a name="user-content-heatmap-options" class="anchor" href="#heatmap-options" aria-hidden="true"><span class="octicon octicon-link"></span></a>Heatmap options</h4>
+
+<p>We have broken the heatmap options into standard and advanced. Standard will give you out-of-the-box heatmap support that should serve almost all needs. Advanced options provide full customization and are meant to be used when you want your visual to look just right.</p>
+
+<h5>
+<a name="user-content-standard-options" class="anchor" href="#standard-options" aria-hidden="true"><span class="octicon octicon-link"></span></a>Standard options</h5>
+
+<table>
+<thead><tr>
+<th>Option</th>
+<th>Required?</th>
+<th>Description</th>
+<th>Comments</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>map</td>
+<td>y</td>
+<td>Google Maps map object</td>
+<td>See <a href="https://developers.google.com/maps/documentation/javascript/examples/map-simple">google maps api</a>
+</td>
+</tr>
+<tr>
+<td>radius</td>
+<td>y</td>
+<td>the radius (in pixels!) that each point affects. The radius will be scaled based on the initial zoom so that when you zoom in the radius will increase so that the visualization scales well.</td>
+<td>The scaling looks more natural for contour maps than for the heatmap.</td>
+</tr>
+<tr>
+<td>opacity</td>
+<td>n</td>
+<td>A value between 0 and 255 used to determine alpha of the visual</td>
+<td>The default is 220</td>
+</tr>
+<tr>
+<td>MapType</td>
+<td>n</td>
+<td>Either "heatmap" or "contour". Heatmap has a falloff in value from the point supplied to the edge of the radius. Contour map uses the maximum value for each pixel amongst the points that have influence over that pixel. See <a href="file:///home/wil/sandbox/heatmap/examples/heatmapVscontourmap.html">Heatmap vs Contour map</a> for a sense of the difference.</td>
+<td>The default is "heatmap". As a rule of thumb, heatmap often looks better for a small number of points that are clustered while contour map looks better for a large number of points that evenly spread.</td>
+</tr>
+<tr>
+<td>gradient</td>
+<td>n</td>
+<td>A list of colors that can be supplied to <a href="#gradient-class">Gradient</a>. Each element of list should be a 3-tuple or 4-tuple which corresponds to rgb or rgba. Each value should range from 0 to 255.</td>
+<td>Default is red to blue to green ([[255,0,0], [0,0,255], [0,255,0]])</td>
+</tr>
+</tbody>
+</table><h6>
+<a name="user-content-advanced-options" class="anchor" href="#advanced-options" aria-hidden="true"><span class="octicon octicon-link"></span></a>Advanced Options</h6>
+
+<p>When calculating the <a href="#value-cache">pixel value cache</a>, we loop over each point, and then loop over each pixel that point may have an affect on, which it determines by the <em>kernelExtent()</em> (see below) or <strong><em>radius</em></strong>. For each pixel, we must assign it a value based on the previous points' influence and the current point's influence on that pixel. Then when it comes time to render the heatmap, we normalize the values to be between 0 and 1 and then interpolate the gradient based on this normalized value and assign it to the pixel on the screen. </p>
+
+<p>The functions below let you tweak how the value of each pixel in the cache is  computed.</p>
+
+<table>
+<thead><tr>
+<th>Option</th>
+<th>Function Definition</th>
+<th>Returns</th>
+<th>Description</th>
+<th>Comments</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>calculatePixelValue</td>
+<td>function(oldValue, pixelCoord, heatPoint, scaledDist)</td>
+<td>Returns a value for the current pixel. This value will then be passed to this function the next time calculatePixelValue is called for this pixel</td>
+<td>Function called to determine the new value for a pixel given a point. <strong><em>oldValue</em></strong> is the value of the pixel before the current point has been applied. <strong><em>pixelCoord</em></strong> is a 2-tuple of the form [row, col]. <strong><em>heatPoint</em></strong> is a 2-tuple where the first element is the point's [row, col] and the second is the value of the point ([[row, col] value]). <strong><em>scaledDist</em></strong> is the distance between the point and the current pixel in pixel space (Euclidean distance between pixelCoord and heatPoint[0]) scaled so that zooming doesn't change the region in latitude-longitude space that the point affects. Don't feel obligated to use it.</td>
+<td>Defining this function oftens means you don't want to define the kernel function as well. However, you must either set the <strong><em>radius</em></strong> or define a <strong><em>kernelExtent</em></strong>. Additionally, note that there is no guarentee on the order with which the points will be passed to this function.</td>
+</tr>
+<tr>
+<td>kernel</td>
+<td>function(distPixel)</td>
+<td>Scale factor for the point's value</td>
+<td>The default calculatePixelValue will call the kernel function of the heatmap to scale the value of point based on the distance between the current pixel's [row, col] and the point's [row, col] which is the parameter <strong><em>distPixel</em></strong>.</td>
+<td>If you define the kernel, be sure not to have set the calculatePixelValue.</td>
+</tr>
+<tr>
+<td>kernelExtent</td>
+<td>function()</td>
+<td>Returns a 2-tuple, each representing the "extent of the kernel".</td>
+<td>The extent is the number of PIXELS away from heatmap point the kernal is non-zero. The extent should be an integer. If your kernel has influence over 2.5 pixels, then make the extent 3. More generally, the extent should be the ceiling of the kernel's influence.</td>
+<td>There is an important performance implication to note. The extent can be as large as you want, however, large extents will increase the time to recompute the cache.</td>
+</tr>
+</tbody>
+</table><h3>
+<a name="user-content-gradient-class" class="anchor" href="#gradient-class" aria-hidden="true"><span class="octicon octicon-link"></span></a>Gradient Class</h3>
+
+<p>Class used to represent a gradient with equal spacing between colors.</p>
+
+<h5>
+<a name="user-content-constructor-1" class="anchor" href="#constructor-1" aria-hidden="true"><span class="octicon octicon-link"></span></a>Constructor</h5>
+
+<table>
+<thead><tr>
+<th>Constructor</th>
+<th>Description</th>
+</tr></thead>
+<tbody><tr>
+<td>Gradient(colors: list)</td>
+<td>
+<strong><em>colors</em></strong> is expected to be a list where each element is either a 3-tuple or 4-tuple which represents the rgb or rgba of the color. Each value of rgba should range from 0 to 255. Example: colors = [[255, 0, 0], [0, 255, 0, 255], [120, 255, 0]]. Note the alpha value of the color is currently not taken into account.</td>
+</tr></tbody>
+</table><h5>
+<a name="user-content-methods-1" class="anchor" href="#methods-1" aria-hidden="true"><span class="octicon octicon-link"></span></a>Methods</h5>
+
+<table>
+<thead><tr>
+<th>Method</th>
+<th>Return Value</th>
+<th>Description</th>
+</tr></thead>
+<tbody><tr>
+<td>interpolateColor(x: number, [0,1])</td>
+<td>Returns a 3-tuple RGB of a color.</td>
+<td>Interpolates between the colors in the gradient using x</td>
+</tr></tbody>
+</table></body></html>
