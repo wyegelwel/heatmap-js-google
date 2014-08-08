@@ -120,6 +120,8 @@ function Heatmap(options){
      */
     this.projection = new MercatorProjection();  
 
+    this.inUpdate = false;
+
     if (options){
       this.setOptions(options);
     }
@@ -165,12 +167,15 @@ Heatmap.prototype.createPixelValueObject_ = function(){
   var rowExtent = Math.max(1, Math.ceil(extent[0]*this.scale));
   var colExtent = Math.max(1, Math.ceil(extent[1]*this.scale));
   
+  var oldPointToPixelCoord = this.pixelValues !== undefined ? this.pixelValues.pointToPixelCoord : pointToPixelCoord;
+
   var pixelValues = createArray(height, width);
   this.pixelValues = {data: pixelValues,
                       width: width,
                       height: height,
                       latLngToPixelCoord: latLngToPixelCoord,
-                      pointToPixelCoord: pointToPixelCoord,
+                      pointToPixelCoord: oldPointToPixelCoord,
+                      newPointToPixelCoord: pointToPixelCoord,
                       pixelCoordToPoint: pixelCoordToPoint,
                       within: within,
                       rowExtent: rowExtent,
@@ -340,6 +345,17 @@ Heatmap.prototype.addPointToPixelValues_ = function(llValue){
   }
 }
 
+Heatmap.prototype.processBatchPoints_ = function(i, step){
+  var that = this;
+   setTimeout(function(){
+      console.log(i)
+      for (var j = Math.floor(step*i); j < Math.min(that.heatData.length, Math.floor(step*(i+1))); j++){
+        var llValue = that.heatData[j];
+        that.addPointToPixelValues_(llValue);               
+      }    
+    }, 155);
+}
+
 /**
  * Returns a 2d matrix where each element corresponds to a pixel on the map
  *  and the value is where on the heatmap to sample from.
@@ -349,11 +365,20 @@ Heatmap.prototype.addPointToPixelValues_ = function(llValue){
  */
 Heatmap.prototype.generatePixelValues_ = function(){
   this.createPixelValueObject_();
-
-  for (var i = 0; i < this.heatData.length; i++){
-    var llValue = this.heatData[i];
-    this.addPointToPixelValues_(llValue);               
+  var batchSize = 1000;
+  var numSteps = Math.ceil(this.heatData.length/batchSize);
+  var that = this;
+  for (var i = 0; i < numSteps; i++){
+    this.processBatchPoints_(i, batchSize);
   }
+  setTimeout(function(){
+    console.log("refresh")
+    that.generateImageData_();
+    that.pixelValues.pointToPixelCoord = that.pixelValues.newPointToPixelCoord;
+    that.inUpdate = false;
+    that.updateCanvas_();
+  }, 155)
+  
 }
 
 /**
@@ -406,7 +431,7 @@ Heatmap.prototype.pixelValuesNeedsUpdate_ = function(){
   var minBB = [0, 0];
   var maxBB = [this.pixelValues.height-1, this.pixelValues.width-1];
 
-  return topLeft === null || bottomRight === null; 
+  return !topLeft.valid || !bottomRight.valid; 
 }
 
 /**
@@ -433,7 +458,16 @@ Heatmap.prototype.updateCanvas_ = function(){
      *      Notice that the lower square is drawn "lower" than you'd expect 
      *      based on the first two inputs 
      */ 
-    this.context.putImageData(this.imageData, -offSet.col, -offSet.row, offSet.col, offSet.row, canvasWidth, canvasHeight)
+     if (this.imageData !== undefined){
+        var row = Math.max(0, offSet.row);
+        var col = Math.max(0, offSet.col);
+        var width = col+canvasWidth < this.imageData.width ? canvasWidth : this.imageData.width;
+        var height = row+canvasHeight < this.imageData.height ? canvasHeight : this.imageData.height;
+        // console.log(offSet)
+        // console.log({row: row, col: col, width:width, height: height});
+        this.context.putImageData(this.imageData, -offSet.col, -offSet.row, col, row, width, height)
+     }
+    
   }else{
     this.updateFullCache_();
   }
@@ -493,8 +527,12 @@ Heatmap.prototype.generateImageData_ = function(){
  *  function called to update both units of data
  */ 
 Heatmap.prototype.updateFullCache_ = function(){
-  if (this.map.getBounds() !== undefined){
+  if (this.map.getBounds() !== undefined && !this.inUpdate){
+    this.inUpdate = true;
+
     this.updateCanvasCache_();
+
+    console.log("update full cache")
 
     this.scale = Math.max(1, Math.pow(2, map.zoom - this.initialZoom))
 
@@ -502,7 +540,7 @@ Heatmap.prototype.updateFullCache_ = function(){
 
     this.generatePixelValues_(); 
 
-    this.generateImageData_();
+    // this.generateImageData_();
   }
 }
 
@@ -523,18 +561,13 @@ Heatmap.prototype.mapPixelToValuePixel_ = function(mRow, mCol){
   var x = cPoint.x; var y = cPoint.y;
 
   var valuePixel = this.pixelValues.pointToPixelCoord(x,y)
-  var within = valuePixel.row >= 0 && valuePixel.col >= 0 
-            && valuePixel.row < valueHeight && valuePixel.col < valueWidth; 
-  if (withinBB([valuePixel.row, valuePixel.col],[0,0], 
-                [valueHeight-1, valueWidth])){
-    valuePixel.x = x;
-    valuePixel.y = y;
-    valuePixel.width = valueWidth;
-    valuePixel.height = valueHeight;
-    return valuePixel;
-  } else{
-    return null
-  }
+  valuePixel.x = x;
+  valuePixel.y = y;
+  valuePixel.width = valueWidth;
+  valuePixel.height = valueHeight;
+  valuePixel.valid = withinBB([valuePixel.row, valuePixel.col],[0,0], 
+                                [valueHeight-1, valueWidth]); 
+  return valuePixel;
 }
 
 /**
