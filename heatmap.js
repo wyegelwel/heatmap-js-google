@@ -96,11 +96,29 @@ function Heatmap(options){
     this.opacity = 220;
 
     /**
+     * Cache of actual pixel data with the same dimensions as pixelValues array
+     */
+    this.imageData = undefined;
+
+    /**
+     * Used to keep track of how many seperate addPoints function calls have been made.
+     *  Once that number is great enough we need to recompute our imageData because values 
+     *  will have changed noticibly 
+     */ 
+    this.tick = 0;
+
+    /**
+     * Tuning parameter for how many ticks we will tolerate before recomputing imageData
+     * Choice is arbitrary and chosen because it "looks good" 
+     */ 
+    this.maxTickBeforeFlushImageData = 20;
+
+    /**
      * Used to project lat-lng pairs to an x,y grid between 0 and 256. This avoids 
      * issues associated with lat-lng and non-uniform distance.
      * http://en.wikipedia.org/wiki/Mercator_projection
      */
-    this.projection = new MercatorProjection();
+    this.projection = new MercatorProjection();  
 
     if (options){
       this.setOptions(options);
@@ -139,6 +157,10 @@ Heatmap.prototype.createPixelValueObject_ = function(){
                x: col*xStep+vMinBB.x};
   }
 
+  function within(row, col){
+    return withinBB([row, col], [0, 0], [height-1, width-1]);
+  }
+
   var extent = this.kernelExtent();
   var rowExtent = Math.max(1, Math.ceil(extent[0]*this.scale));
   var colExtent = Math.max(1, Math.ceil(extent[1]*this.scale));
@@ -150,6 +172,7 @@ Heatmap.prototype.createPixelValueObject_ = function(){
                       latLngToPixelCoord: latLngToPixelCoord,
                       pointToPixelCoord: pointToPixelCoord,
                       pixelCoordToPoint: pixelCoordToPoint,
+                      within: within,
                       rowExtent: rowExtent,
                       colExtent: colExtent};
 }
@@ -220,6 +243,32 @@ Heatmap.prototype.setOptions = function(options){
   this.updateCanvas_();
 }
 
+Heatmap.prototype.cacheHandleAddedPoint_ = function(point){
+  if (this.cacheReady){
+    this.addPointToPixelValues_(point);
+    var pixelCoord = this.pixelValues.latLngToPixelCoord(point[0], point[1]);
+    this.recomputeImageDataAround_(pixelCoord);
+  }  
+}
+
+Heatmap.prototype.mapHandleAddedPoints_ = function(points){
+  {  // Check to see if we need to recompute image data
+    var canvasWidth = this.canvasLayer.canvas.width;
+    var canvasHeight = this.canvasLayer.canvas.height;
+
+    this.tick++;
+    if (this.tick > this.maxTickBeforeFlushImageData){
+      var start = this.mapPixelToValuePixel_(0, 0);
+      this.updatePixelData_(this.imageData, canvasWidth, canvasHeight, 
+                              start.row, start.col);
+      this.tick = 0;
+    }
+  }
+
+  // redraw
+  this.updateCanvas_();
+}
+
 /**
  * Adds the list of points to heatData and redraws
  *
@@ -234,9 +283,9 @@ Heatmap.prototype.addPoints = function(points){
     } else{
       this.unweightedCount += 1;
     }
+    this.cacheHandleAddedPoint_(point);
   }
-  this.addPointToPixelValues_(point);
-  this.updateCanvas_();
+  this.mapHandleAddedPoints_(points);
 }
 
 /**
@@ -246,6 +295,20 @@ Heatmap.prototype.addPoints = function(points){
  */
 Heatmap.prototype.addPoint = function(point){
   this.addPoints([point]);
+}
+
+Heatmap.prototype.getPotentialInfluenceRegion = function(pixelCoord){
+  var rowExtent = this.pixelValues.rowExtent;
+  var colExtent = this.pixelValues.colExtent;
+
+  var minRow = Math.max(0, pixelCoord.row-rowExtent);
+  var maxRow = Math.min(this.pixelValues.height-1, pixelCoord.row+rowExtent);
+  var minCol = Math.max(0, pixelCoord.col-colExtent);
+  var maxCol = Math.min(this.pixelValues.width-1,pixelCoord.col+colExtent);
+
+  return {minRow: minRow, maxRow: maxRow, 
+          minCol: minCol, maxCol: maxCol,
+          width: maxCol - minCol, height: maxRow - minRow};
 }
 
 Heatmap.prototype.addPointToPixelValues_ = function(llValue){
@@ -259,19 +322,13 @@ Heatmap.prototype.addPointToPixelValues_ = function(llValue){
     var heatPoint = [heatRowCol, value];
     // Bounds for loop
 
-    if (withinBB([pixelCoord.row, pixelCoord.col], [0, 0],
-                  [this.pixelValues.height-1, this.pixelValues.width-1])){
+    if (this.pixelValues.within(pixelCoord.row, pixelCoord.col)){
       var pixelValues = this.pixelValues.data;
 
-      var rowExtent = this.pixelValues.rowExtent;
-      var colExtent = this.pixelValues.colExtent;
+      var region = this.getPotentialInfluenceRegion(pixelCoord);
 
-      var minRow = Math.max(0, pixelCoord.row-rowExtent);
-      var maxRow = Math.min(this.pixelValues.height-1, pixelCoord.row+rowExtent);
-      var minCol = Math.max(0, pixelCoord.col-colExtent);
-      var maxCol = Math.min(this.pixelValues.width-1,pixelCoord.col+colExtent);
-      for (var row = minRow; row <= maxRow; row++){
-        for (var col = minCol; col <= maxCol; col++){
+      for (var row = region.minRow; row <= region.maxRow; row++){
+        for (var col = region.minCol; col <= region.maxCol; col++){
           var oldValue = pixelValues[row][col];
           var scaledDist = distance([row,col], heatRowCol)/this.scale
           pixelValues[row][col] = this.calculatePixelValue(oldValue, [row, col], 
@@ -292,7 +349,6 @@ Heatmap.prototype.addPointToPixelValues_ = function(llValue){
  */
 Heatmap.prototype.generatePixelValues_ = function(){
   this.createPixelValueObject_();
-  
 
   for (var i = 0; i < this.heatData.length; i++){
     var llValue = this.heatData[i];
@@ -304,23 +360,36 @@ Heatmap.prototype.generatePixelValues_ = function(){
  * Mutates the imgData param to reflect the the pixel values matrix
  *
  * @param imgData
- * @param pixelValues: {@see generatePixelValues}
  * @param width: width of the canvas in pixels
  * @param height: height of the canvas in pixels
+ * @param offset: offset into pixelValues. Will default to offset for viewport if none is specified
  */ 
-Heatmap.prototype.updatePixelData_ = function(imgData, pixelValues, width, height){
+Heatmap.prototype.updatePixelData_ = function(imgData, width, height, startRow, startCol, offSet){
   var pixelValues = this.pixelValues.data;
-  var offSet = this.mapPixelToValuePixel_(0, 0);
-  for (var row = 0; row < height; row++){
-      for (var col = 0; col < width; col++){
+  
+  offSet = offSet === undefined ? {row: 0, col: 0} : offSet;
+  startRow = startRow === undefined ? 0 : startRow;
+  startCol = startCol === undefined ? 0 : startCol; 
+  
+  for (var row = startRow; row < startRow+height; row++){
+      for (var col = startCol; col < startCol+width; col++){
         var v = pixelValues[offSet.row + row][offSet.col + col];
         v = clamp(v/this.maxValue, 0, 1);
         var color = this.gradient.interpolateColor(v);
-        imgData.data[(col+row*width)*4 + 0] = color[0];
-        imgData.data[(col+row*width)*4 + 1] = color[1];
-        imgData.data[(col+row*width)*4 + 2] = color[2];
-        imgData.data[(col+row*width)*4 + 3] = v>1e-3 ? this.opacity : v*this.opacity;  
+        var rIndex = (col+row*imgData.width)*4;
+        imgData.data[rIndex + 0] = color[0];
+        imgData.data[rIndex + 1] = color[1];
+        imgData.data[rIndex + 2] = color[2];
+        imgData.data[rIndex + 3] = v>1e-3 ? this.opacity : v*this.opacity; 
       } 
+  }
+}
+
+Heatmap.prototype.recomputeImageDataAround_ = function(pixelCoord){
+  if (this.pixelValues.within(pixelCoord.row, pixelCoord.col)){
+    var region = this.getPotentialInfluenceRegion(pixelCoord);
+    this.updatePixelData_(this.imageData, region.width, region.height, 
+                           region.minRow, region.minCol);
   }
 }
 
@@ -356,12 +425,15 @@ Heatmap.prototype.updateCanvas_ = function(){
     }
 
     this.context.clearRect(0, 0, canvasWidth, canvasHeight);
-    
-    imgData = this.context.getImageData(0,0,canvasWidth,canvasHeight);
 
-    this.updatePixelData_(imgData, [], canvasWidth, canvasHeight);
-
-    this.context.putImageData(imgData, 0,0);
+    var offSet = this.mapPixelToValuePixel_(0, 0);
+    /* drawing is a little strange. We have to shift the start of the draw back
+     * to compensate for a shift caused by indexing into image. 
+     * See: http://jsfiddle.net/loktar/cVkg3/ to get a sense of what we mean. 
+     *      Notice that the lower square is drawn "lower" than you'd expect 
+     *      based on the first two inputs 
+     */ 
+    this.context.putImageData(this.imageData, -offSet.col, -offSet.row, offSet.col, offSet.row, canvasWidth, canvasHeight)
   }else{
     this.updateFullCache_();
   }
@@ -403,6 +475,17 @@ Heatmap.prototype.updateCanvasCache_ = function(){
   this.cache.yStep = yStep;
 }
 
+Heatmap.prototype.generateImageData_ = function(){
+  var pixelValues = this.pixelValues;
+  var width = pixelValues.width; var height = pixelValues.height;
+  if (this.imageData === undefined || 
+      width != this.imageData.width || height != this.imageData.height){
+    this.imageData = this.context.createImageData(width, height);
+  }
+  
+  this.updatePixelData_(this.imageData, width, height);
+}
+
 /**
  * We cache two units of data. The first is data about the canvas and map we 
  *  are working with. The second is a matrix of heat values that we calculate
@@ -410,7 +493,7 @@ Heatmap.prototype.updateCanvasCache_ = function(){
  *  function called to update both units of data
  */ 
 Heatmap.prototype.updateFullCache_ = function(){
-  if (this.map.getBounds() !== undefined &&  this.heatData.length > 0){
+  if (this.map.getBounds() !== undefined){
     this.updateCanvasCache_();
 
     this.scale = Math.max(1, Math.pow(2, map.zoom - this.initialZoom))
@@ -418,6 +501,8 @@ Heatmap.prototype.updateFullCache_ = function(){
     this.cacheReady = true;
 
     this.generatePixelValues_(); 
+
+    this.generateImageData_();
   }
 }
 
