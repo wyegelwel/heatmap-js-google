@@ -65,7 +65,7 @@ function Heatmap(options){
     /**
      * Stores gradient specified. red to blue to green is the default.
      */
-    this.gradient = new Gradient([[255,0,0], [0,0,255], [0,255,0]])
+    this.gradient = new Gradient(["rgba(255,0,0,255)", "rgba(0,0,255,255)", "rgba(0,255,0,255)"])
 
     /**
      * Stores the maximum value from the weighted points. This is used to scale them 
@@ -666,21 +666,27 @@ Heatmap.prototype.contourCalculatePixelValue_ = function(radius){
 /**
  * Class to represent a gradient with equal spacing between colors. 
  *  
- * @param colors: a list where each element is either a 3-tuple or 4-tuple
- *                  which represents the rgb or rgba of the color (0-255)
+ * @param colors: a list where each element is a valid css color string
  */
 function Gradient(colors){
   var gradientColors = [];
-  colors.map(function(color){
-    if (color.length == 3){
-      gradientColors.push([color[0], color[1], color[2], 1]);
-    }else if (color.length == 4){
-      gradientColors.push(color);
-    } else{
-      throw "Color should have either 3 channels (rgb) or 4 channels (rbga)";
-    }
-  });
-  this.colors = gradientColors;
+
+  var canvas = document.createElement("canvas");
+  canvas.width = 101; canvas.height = 1;
+
+  var context = canvas.getContext('2d');
+
+  context.rect(0, 0, canvas.width, canvas.height);
+  var grd = context.createLinearGradient(0, 0, canvas.width, canvas.height);
+
+  for (var i = 0; i < colors.length; i++){
+    grd.addColorStop( i*( 1/( colors.length-1 ) ), colors[i] );
+  }
+
+  context.fillStyle = grd;
+  context.fill();
+
+  this.imgData = context.getImageData(0,0,canvas.width, canvas.height);
 };
 
 /**
@@ -690,24 +696,9 @@ function Gradient(colors){
  */
 Gradient.prototype.interpolateColor = function(x){
   if (x >= 0 && x <= 1){
-    var colorSpacing = 1.0/(this.colors.length-1);
-
-    var lowIndex = Math.floor(x / colorSpacing);
-    if (lowIndex == this.colors.length-1){
-      return this.colors[lowIndex];
-    }
-    var highIndex = lowIndex + 1;
-    
-    var lowColor = this.colors[lowIndex];
-    var highColor = this.colors[highIndex];
-
-    var interpolator = x / colorSpacing - lowIndex;
-    var color = [];
-    for (var i = 0; i < 3; i++){
-      color[i] = (1-interpolator) * lowColor[i] + interpolator * highColor[i];
-    }
-
-    return color;  
+    var index = Math.round(x*100);
+    var data = this.imgData.data;
+    return [ data[index*4 + 0], data[index*4 + 1], data[index*4 + 2], data[index*4 + 3] ]
   } else{
     throw "x (" + x +") must be between 0 and 1";
   }
