@@ -5,8 +5,8 @@ When working with google map's builtin heatmap utility, I found I wanted greater
 
 # Examples
 
-* [Heatmap vs Contour map](http://wyegelwel.github.io/heatmap-js-google/examples/heatmapVscontourmap.html)
-* [Mouse over add points](http://wyegelwel.github.io/heatmap-js-google/examples/mouseOver.html) 
+* [Heatmap vs Contour map](http://wyegelwel.github.io/heatmap-js-google/code/examples/heatmapVscontourmap.html)
+* [Mouse over add points](http://wyegelwel.github.io/heatmap-js-google/code/examples/mouseOver.html) 
 
 
 
