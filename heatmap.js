@@ -128,61 +128,6 @@ function Heatmap(options){
 };
 
 /**
- * Creates the heat value matrix and stores the size as well as helper 
- *  functions for indexing into the matrix
- */ 
-Heatmap.prototype.createPixelValueObject_ = function(){
-  var projection = this.projection;
-  var cHeight = this.canvasLayer.canvas.height;
-  var cWidth = this.canvasLayer.canvas.width; 
-  
-  var vMinBB = this.cache.CanvasRowColToPoint(cHeight*2, cWidth*-1);
-  var vMaxBB = this.cache.CanvasRowColToPoint(cHeight*-1, cWidth*2);
-
-  var width = cWidth*3;
-  var height = cHeight*3;
-
-  var yStep = this.cache.yStep; xStep = this.cache.xStep;
-
-  function latLngToPixelCoord(lat, lng){
-      point = projection.fromLatLngToPoint(lat, lng);
-      return pointToPixelCoord(point.x, point.y);
-  }
-
-  function pointToPixelCoord(x,y){
-    return {row: (height-1) - Math.floor((y-vMinBB.y)/yStep), 
-              col: Math.floor((x-vMinBB.x)/xStep)}
-  }
-
-  function pixelCoordToPoint(row, col){
-      return {y: (height-row-1)*yStep+vMinBB.y,
-               x: col*xStep+vMinBB.x};
-  }
-
-  function within(row, col){
-    return withinBB([row, col], [0, 0], [height-1, width-1]);
-  }
-
-  var extent = this.kernelExtent();
-  var rowExtent = Math.max(1, Math.ceil(extent[0]*this.scale));
-  var colExtent = Math.max(1, Math.ceil(extent[1]*this.scale));
-  
-  var oldPointToPixelCoord = this.pixelValues !== undefined ? this.pixelValues.pointToPixelCoord : pointToPixelCoord;
-
-  var pixelValues = createArray(height, width);
-  this.pixelValues = {data: pixelValues,
-                      width: width,
-                      height: height,
-                      latLngToPixelCoord: latLngToPixelCoord,
-                      pointToPixelCoord: oldPointToPixelCoord,
-                      newPointToPixelCoord: pointToPixelCoord,
-                      pixelCoordToPoint: pixelCoordToPoint,
-                      within: within,
-                      rowExtent: rowExtent,
-                      colExtent: colExtent};
-}
-
-/**
  * Modify state of the heatmap. See heatmap option docs for full list of 
  *  available options
  */
@@ -248,32 +193,6 @@ Heatmap.prototype.setOptions = function(options){
   this.updateCanvas_();
 }
 
-Heatmap.prototype.cacheHandleAddedPoint_ = function(point){
-  if (this.cacheReady){
-    this.addPointToPixelValues_(point);
-    var pixelCoord = this.pixelValues.latLngToPixelCoord(point[0], point[1]);
-    this.recomputeImageDataAround_(pixelCoord);
-  }  
-}
-
-Heatmap.prototype.mapHandleAddedPoints_ = function(points){
-  {  // Check to see if we need to recompute image data
-    var canvasWidth = this.canvasLayer.canvas.width;
-    var canvasHeight = this.canvasLayer.canvas.height;
-
-    this.tick++;
-    if (this.tick > this.maxTickBeforeFlushImageData){
-      var start = this.mapPixelToValuePixel_(0, 0);
-      this.updatePixelData_(this.imageData, canvasWidth, canvasHeight, 
-                              start.row, start.col);
-      this.tick = 0;
-    }
-  }
-
-  // redraw
-  this.updateCanvas_();
-}
-
 /**
  * Adds the list of points to heatData and redraws
  *
@@ -302,7 +221,103 @@ Heatmap.prototype.addPoint = function(point){
   this.addPoints([point]);
 }
 
-Heatmap.prototype.getPotentialInfluenceRegion = function(pixelCoord){
+/**
+ * Creates the heat value matrix and stores the size as well as helper 
+ *  functions for indexing into the matrix
+ */ 
+Heatmap.prototype.createPixelValueObject_ = function(){
+  var projection = this.projection;
+  var cHeight = this.canvasLayer.canvas.height;
+  var cWidth = this.canvasLayer.canvas.width; 
+  
+  var vMinBB = this.cache.CanvasRowColToPoint(cHeight*2, cWidth*-1);
+  var vMaxBB = this.cache.CanvasRowColToPoint(cHeight*-1, cWidth*2);
+
+  var width = cWidth*3;
+  var height = cHeight*3;
+
+  var yStep = this.cache.yStep; xStep = this.cache.xStep;
+
+  function latLngToPixelCoord(lat, lng){
+      point = projection.fromLatLngToPoint(lat, lng);
+      return pointToPixelCoord(point.x, point.y);
+  }
+
+  function pointToPixelCoord(x,y){
+    return {row: (height-1) - Math.floor((y-vMinBB.y)/yStep), 
+              col: Math.floor((x-vMinBB.x)/xStep)}
+  }
+
+  function pixelCoordToPoint(row, col){
+      return {y: (height-row-1)*yStep+vMinBB.y,
+               x: col*xStep+vMinBB.x};
+  }
+
+  function within(row, col){
+    return withinBB([row, col], [0, 0], [height-1, width-1]);
+  }
+
+  var extent = this.kernelExtent();
+  var rowExtent = Math.max(1, Math.ceil(extent[0]*this.scale));
+  var colExtent = Math.max(1, Math.ceil(extent[1]*this.scale));
+  
+  var oldPointToPixelCoord = this.pixelValues !== undefined ? this.pixelValues.pointToPixelCoord : pointToPixelCoord;
+
+  var pixelValues = createArray(height, width);
+  this.pixelValues = {data: pixelValues,
+                      width: width,
+                      height: height,
+                      latLngToPixelCoord: latLngToPixelCoord,
+                      pointToPixelCoord: oldPointToPixelCoord,
+                      newPointToPixelCoord: pointToPixelCoord,
+                      pixelCoordToPoint: pixelCoordToPoint,
+                      within: within,
+                      rowExtent: rowExtent,
+                      colExtent: colExtent};
+}
+
+/**
+ * Helper function for addPoints(). Called on each point as it is added to heatData
+ */ 
+Heatmap.prototype.cacheHandleAddedPoint_ = function(point){
+  if (this.cacheReady){
+    this.addPointToPixelValues_(point);
+    var pixelCoord = this.pixelValues.latLngToPixelCoord(point[0], point[1]);
+    this.recomputeImageDataAround_(pixelCoord);
+  }  
+}
+
+/**
+ * Helper function for addPoints(). Called after all points have been added to heatData
+ */
+Heatmap.prototype.mapHandleAddedPoints_ = function(points){
+  {  // Check to see if we need to recompute image data
+    var canvasWidth = this.canvasLayer.canvas.width;
+    var canvasHeight = this.canvasLayer.canvas.height;
+
+    this.tick++;
+    if (this.tick > this.maxTickBeforeFlushImageData){
+      var start = this.mapPixelToValuePixel_(0, 0);
+      this.updatePixelData_(this.imageData, canvasWidth, canvasHeight, 
+                              start.row, start.col);
+      this.tick = 0;
+    }
+  }
+
+  // redraw
+  this.updateCanvas_();
+}
+
+
+/**
+ * Returns the bounding box of points that might be affected at pixelCoord by 
+ *  a point. This is determined using the kernelExtent function and our scale
+ *
+ * @param pixelCoord: object with a row and col property 
+ * @return: object with a minRow, maxRow, minCol, maxCol, width, and height 
+ *             property
+ */ 
+Heatmap.prototype.getPotentialInfluenceRegion_ = function(pixelCoord){
   var rowExtent = this.pixelValues.rowExtent;
   var colExtent = this.pixelValues.colExtent;
 
@@ -316,6 +331,11 @@ Heatmap.prototype.getPotentialInfluenceRegion = function(pixelCoord){
           width: maxCol - minCol, height: maxRow - minRow};
 }
 
+/**
+ * Adds a single point to the pixel value matrix. 
+ *
+ * @param llValue: [latitude, longititude, value] 
+ */ 
 Heatmap.prototype.addPointToPixelValues_ = function(llValue){
   if (this.cacheReady){
     // Wrangle data in to correct transforms and form
@@ -330,7 +350,7 @@ Heatmap.prototype.addPointToPixelValues_ = function(llValue){
     if (this.pixelValues.within(pixelCoord.row, pixelCoord.col)){
       var pixelValues = this.pixelValues.data;
 
-      var region = this.getPotentialInfluenceRegion(pixelCoord);
+      var region = this.getPotentialInfluenceRegion_(pixelCoord);
 
       for (var row = region.minRow; row <= region.maxRow; row++){
         for (var col = region.minCol; col <= region.maxCol; col++){
@@ -345,6 +365,13 @@ Heatmap.prototype.addPointToPixelValues_ = function(llValue){
   }
 }
 
+/**
+ * Used to add only a portion of the total points to the pixelValues matrix at 
+ *  once. This allows spacing between batches so the ui can catch up
+ *
+ * @param i: which batch
+ * @param step: How many items to process in a batch
+ */ 
 Heatmap.prototype.processBatchPoints_ = function(i, step){
   var that = this;
    setTimeout(function(){
@@ -410,9 +437,17 @@ Heatmap.prototype.updatePixelData_ = function(imgData, width, height, startRow, 
   }
 }
 
+/**
+ * Recomputes the pixel colors in the image data array around a particular point
+ *  
+ * It is worth noting that this alone will cause strange artifacts because the 
+ *  rest of the array is affected when a point is added. 
+ *
+ * @param pixelCoord: object with a row and col property 
+ */ 
 Heatmap.prototype.recomputeImageDataAround_ = function(pixelCoord){
   if (this.pixelValues.within(pixelCoord.row, pixelCoord.col)){
-    var region = this.getPotentialInfluenceRegion(pixelCoord);
+    var region = this.getPotentialInfluenceRegion_(pixelCoord);
     this.updatePixelData_(this.imageData, region.width, region.height, 
                            region.minRow, region.minCol);
   }
@@ -509,6 +544,9 @@ Heatmap.prototype.updateCanvasCache_ = function(){
   this.cache.yStep = yStep;
 }
 
+/**
+ * Creates the image data cache if necessary and then fills it
+ */
 Heatmap.prototype.generateImageData_ = function(){
   var pixelValues = this.pixelValues;
   var width = pixelValues.width; var height = pixelValues.height;
