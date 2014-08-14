@@ -223,6 +223,15 @@ Heatmap.prototype.addPoint = function(point){
   this.addPoints([point]);
 }
 
+Heatmap.prototype.clear = function(){
+  while (this.heatData.length > 0){
+    this.heatData.pop();
+  }
+  this.updateFullCache_();
+  this.generateImageData_();
+  this.updateCanvas_();
+}
+
 /**
  * Creates the heat value matrix and stores the size as well as helper 
  *  functions for indexing into the matrix
