@@ -202,8 +202,8 @@ Heatmap.prototype.addPoints = function(points){
   for (var i = 0; i < points.length; i++){
     var point = points[i];
     if (point.length == 3){ // weighted
-      if (point[2] < 0 || isFinite(point[2])){
-        throw "Value (" + point[2] + "must be > 0 and finite";
+      if (point[2] < 0 || !isFinite(point[2])){
+        throw "Value (" + point[2] + "must be >0 and finite"
       }
     } else{
       this.unweightedCount += 1;
