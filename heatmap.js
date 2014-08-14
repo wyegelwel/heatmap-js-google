@@ -201,12 +201,14 @@ Heatmap.prototype.setOptions = function(options){
 Heatmap.prototype.addPoints = function(points){
   for (var i = 0; i < points.length; i++){
     var point = points[i];
-    this.heatData.push(point);
     if (point.length == 3){ // weighted
-      // this.maxValue = Math.max(point[2], this.maxValue);
+      if (point[2] < 0 || isFinite(point[2])){
+        throw "Value (" + point[2] + "must be > 0 and finite";
+      }
     } else{
       this.unweightedCount += 1;
     }
+    this.heatData.push(point);
     this.cacheHandleAddedPoint_(point);
   }
   this.mapHandleAddedPoints_(points);
@@ -637,7 +639,7 @@ Heatmap.prototype.initializeCanvas_ = function(map){
 
 Heatmap.prototype.defaultKernel_= function(radius){
   function kernel(distPixel){
-    return 2.5*Math.exp(-(1/2)*distPixel*distPixel/radius)/Math.sqrt(2*Math.PI);
+    return 2.5*Math.exp(-(1/4)*distPixel*distPixel/radius)/Math.sqrt(2*Math.PI);
   }
   return kernel;
 }
